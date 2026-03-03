@@ -222,11 +222,11 @@ export function select(id) {
       updateUnreadBadge();
       if (state.filter.tab === 'unread') setTab('all');
     }
-    requestAnimationFrame(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
       entry.fit.fit();
       send({ type: 'resize', id, cols: entry.term.cols, rows: entry.term.rows });
       entry.term.focus();
-    });
+    }));
   }
   state.active = id;
 }

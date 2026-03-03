@@ -40,6 +40,7 @@ Current code structure
   - `utils.js` — shared backend helpers
   - `themes.js` — 10 built-in terminal theme presets
   - `stats.js` — TEMPORARY process stats (CPU, memory, network per session via process group)
+  - `transcript.js` — per-session JSONL transcript store with search cache
   - `agent-presets.json` — CLI agent definitions with outputMarker field
 - Frontend (ES modules in `public/js/`):
   - `app.js` — app bootstrap, WebSocket message routing, stats overlay + working/idle detection
@@ -97,91 +98,68 @@ Done
   - Each agent declares its output line marker (⏺ Claude, • Codex, ✦ Gemini, │ OpenCode)
   - Buffer reader scans xterm.js screen bottom-up for the marker to extract last agent message
   - Works across themes since it reads character content, not colors
+- Sidebar search/filter toolbar (WhatsApp-style):
+  - Pill-shaped search input with subtle inset styling
+  - Segmented All / Unread tab control with badge capsule
+  - Unified filter pipeline: single {query, tab} state, one applyFilter() function
+  - Search matches session name + backend transcript content
+- Backend transcript store (`transcript.js`):
+  - Per-session JSONL files in `data/transcripts/`, append-only
+  - User input: buffered with backspace support, committed on Enter
+  - Agent output: 300ms debounced, ANSI-stripped, meaningful lines only
+  - Async writes (non-blocking PTY pipeline)
+  - In-memory search cache with startup hydration from existing JSONL files
+  - Flush-before-clear to prevent losing final output chunks
+  - WS protocol: `transcript.cache` on connect, `transcript.append` incremental
+  - Frontend caches per-session searchText, live re-filters on transcript updates
+- Unread tracking:
+  - Blue dot on sessions with new output when not active
+  - Clears on session select
+  - Auto-switches to All tab when selecting unread session (prevents vanishing row)
+  - Unread count badge on filter tab
+- Terminal fit fix (double requestAnimationFrame for reliable layout after display change)
 
 Not done
 - Resume UI (show resumable sessions in sidebar, resume button)
 - Project hierarchy and project-scoped session filtering
 - Folder picker polish (hidden dirs, clearer error/disabled states)
-- Session metadata (createdAt, lastInputAt, lastOutputAt, lastViewedAt, unread state)
-- Search
-- `All` / `Unread` filters
+- Session metadata (createdAt, lastInputAt, lastOutputAt, lastViewedAt)
 - Prompt library UI and injection flow
-- Timestamp formatting rules (today: time, yesterday: "Yesterday", within week: weekday, older: date)
 - Remove temporary stats/debug code after experiments are done
 
 Next Phase Priorities
 
-1. Folder Picker Polish
-- Keep the browse-style directory picker as the primary path selection flow.
-- Improve the remaining UX gaps:
-- hidden-directory access when needed
-- clearer disabled/error states
-- better validation feedback when a path cannot be resolved
+1. Resume UI
+- Show resumable sessions in sidebar with resume button.
+- Wire up to existing backend resume infrastructure.
+- Visual treatment: separate section or inline with session list (dimmed/distinct).
 
 2. Projects
 - Add a lightweight project layer above sessions.
 - A project is a grouping container for multiple sessions.
-- The hierarchy should become:
-- App
-- Project
-- Session
-
-Recommended v1 scope
-- project id
-- project name
-- optional icon or accent color
-- active project selection
-- filter the session list by the selected project
-- fallback project such as `General` or `No Project`
-
-Session behavior
-- Every session should belong to a project.
-- When creating a new session, allow associating it with a project.
-- If the user does not choose one, assign it to the default fallback project.
-- Switching projects should scope the visible session list to that project.
+- Hierarchy: App → Project → Session.
+- v1 scope: project id/name, optional accent color, active project selection, session filtering.
+- Fallback project for unassigned sessions.
 
 3. Session Metadata Layer
-- Add per-session metadata needed for richer list behavior.
-- Track:
-- `createdAt`
-- `lastInputAt`
-- `lastOutputAt`
-- `lastViewedAt`
-- `lastActivityAt`
-- `lastPreviewText`
-- command id/label
-- command type / icon id
-- project id
-- cwd
-- This is the foundation for timestamps, previews, search, and unread.
+- Per-session metadata: createdAt, lastInputAt, lastOutputAt, lastViewedAt, lastActivityAt.
+- Foundation for richer sorting, filtering, and display.
 
-4. Search
-- Add a search bar above the session list.
-- Recommended v1 search scope:
-- session name
-- last preview text
-- optional rolling terminal buffer
+4. Folder Picker Polish
+- Hidden directory access.
+- Clearer disabled/error states.
+- Better validation feedback.
 
-5. Filters: All / Unread
-- Add two pill filters:
-- `All`
-- `Unread`
-- Unread should derive from output activity since last view/read event.
-
-6. Prompt Library
-- Add a prompt library section in Settings.
+5. Prompt Library
 - Store reusable prompts/templates in config.
-- v1 interaction:
-- open prompt picker
-- insert into active PTY
-- optional mode to auto-send with newline
+- Prompt picker UI, insert into active PTY.
+- Optional auto-send with newline.
 
-7. Resume UI
-- Show resumable sessions in sidebar with resume button.
-- Wire up to existing backend resume infrastructure.
+6. Session Creation Enhancements
+- Per-command default profile, per-command default working directory override.
 
-8. Session Creation Enhancements
-- Still TODO: per-command default profile, per-command default working directory override.
+7. Remove Temporary Code
+- Remove stats.js, stats overlay, debug buffer dump after working/idle detection is stable.
 
 Design Notes
 - Settings UI uses Tailwind CSS with custom styled dropdowns (no native selects).
@@ -192,21 +170,26 @@ Design Notes
 Known Review Note
 - Keep the static file serving path traversal protection intact as the server evolves.
 
+Resolved Questions
+- Unread clears on session select. Auto-switches to All tab to prevent vanishing row.
+- Search uses backend transcript store (JSONL), not xterm buffer scraping.
+- Transcript storage: per-session JSONL files in data/transcripts/.
+- Agent output parsing: simple universal parser (strip ANSI, meaningful lines). Per-agent adapters deferred.
+
 Open Questions
 - Should `Projects` be its own rail view with a project list, or should it directly switch the session column into grouped project mode?
 - Should the fallback project be called `General`, `Inbox`, or `No Project`?
 - Should profiles stay purely visual in v1, or also include command/path defaults?
 - Should resumable sessions auto-restore on startup, or should restore always be explicit?
 - How should we represent non-resumable historical sessions after restart: archive, closed entry, or hide them?
-- Should unread clear on focus, click, or only after explicit interaction?
 - Should prompt library default to paste-only, or paste-and-send?
 - Should the folder picker allow hidden directories in an advanced mode?
 
 Recommended Order (remaining)
-- Resume UI (show resumable sessions in sidebar with resume button)
-- Add lightweight project model + project-scoped session filtering
-- Polish folder picker (hidden dirs, error states)
-- Add session metadata tracking (timestamps, previews)
-- Add search
-- Add `All` / `Unread` filters
-- Add prompt library UI and injection flow
+1. Resume UI — show resumable sessions, resume button
+2. Projects — lightweight grouping + session filtering
+3. Session metadata — timestamps for richer behavior
+4. Folder picker polish — hidden dirs, error states
+5. Prompt library — reusable prompts/templates UI
+6. Session creation enhancements — per-command defaults
+7. Cleanup — remove temporary stats/debug code

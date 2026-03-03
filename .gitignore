@@ -3,6 +3,7 @@ node_modules/
 # Local app state
 config.json
 sessions.json
+data/
 
 # Generated assets
 public/tailwind.css
