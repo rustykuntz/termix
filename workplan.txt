@@ -10,7 +10,7 @@ Implemented foundation
 - The `node-pty` macOS `spawn-helper` permission issue is handled automatically at startup.
 - Settings persist to a local `config.json` file in the project root.
 - Config schema includes: `defaultPath`, `commands`, `profiles`, `prompts`, `defaultProfile`, `confirmClose`.
-- Agent presets defined in `agent-presets.json` (Claude Code, Codex, Gemini CLI, Shell).
+- Agent presets defined in `agent-presets.json` (Claude Code, Codex, Gemini CLI, OpenCode, Shell).
 - Server sends presets on WebSocket connect (`type: 'presets'`).
 - Session creation uses an inline creator card in the sidebar panel:
   - Random fun session name placeholders (Color + Animal combos, e.g. "Blue Panda").
@@ -22,7 +22,7 @@ Implemented foundation
   - Settings opens as an overlay in main; panel items switch sidebar content.
 - Profiles / theme system:
   - 10 built-in terminal themes (Default, Dracula, Nord, Catppuccin Mocha, Solarized Dark, One Dark, Monokai, Tokyo Night, GitHub Dark, Gruvbox Dark).
-  - Per-session profile switching via colored accent dot in sidebar.
+  - Per-session profile switching via context menu.
   - Progressive settings UI: single profile = "Appearance" (just theme + accent), multiple = "Terminal Styles" with cards, stars, and MRU.
   - Custom Tailwind-styled theme dropdown with color preview strips (replaces native selects).
 - Settings overlay with two-panel layout: category nav sidebar (General, CLI Agents, Appearance) + content panels.
@@ -30,15 +30,6 @@ Implemented foundation
 - Folder picker modal with directory browsing.
 - Tailwind CSS v3 compiled once to static file (`npm run build:css`).
 - Session resume infrastructure (backend): sessions.json persistence, resumable session list, resume command support.
-
-Stability fixes already in place
-- Empty command lists fall back to a shell command.
-- Command parsing supports quoted arguments.
-- Working directories are validated and fall back safely.
-- Config defaults are deep-copied, avoiding shared mutable default arrays.
-- Config migration backfills empty profiles.
-- Static file serving has path traversal protection.
-- Settings scrolling uses `min-h-0` for proper flexbox overflow.
 
 Current code structure
 - Backend:
@@ -48,18 +39,19 @@ Current code structure
   - `handlers.js` — WebSocket message dispatch (sends config, themes, presets, sessions, resumable on connect)
   - `utils.js` — shared backend helpers
   - `themes.js` — 10 built-in terminal theme presets
-  - `agent-presets.json` — CLI agent definitions (Claude Code, Codex, Gemini CLI, Shell)
+  - `stats.js` — TEMPORARY process stats (CPU, memory, network per session via process group)
+  - `agent-presets.json` — CLI agent definitions with outputMarker field
 - Frontend (ES modules in `public/js/`):
-  - `app.js` — app bootstrap, WebSocket message routing
+  - `app.js` — app bootstrap, WebSocket message routing, stats overlay + working/idle detection
   - `state.js` — shared client state (ws, terms, cfg, themes, presets, resumable)
-  - `terminals.js` — terminal add/remove/select/rename, per-session profile picker dropdown
+  - `terminals.js` — terminal add/remove/select/rename, session context menu, buffer reading for agent output
   - `settings.js` — settings panel rendering, custom theme dropdown, save logic
   - `creator.js` — inline session creation card with agent preset buttons
   - `nav.js` — left navigation rail panel switching
   - `profiles.js` — profile/theme resolution helpers
   - `confirm.js` — close confirmation modal
   - `folder-picker.js` — directory browser modal
-  - `utils.js` — small frontend helpers (esc, debounce)
+  - `utils.js` — small frontend helpers (esc, debounce, agentIcon)
 - Styling:
   - `src/input.css` — Tailwind source with custom `.term-wrap` rules
   - `public/tailwind.css` — compiled Tailwind output
@@ -89,17 +81,33 @@ Done
 - Tailwind CSS v3 integration
 - Static file path traversal protection
 - Session resume backend (persistence, resumable list, resume commands)
+- WhatsApp-style session list layout:
+  - Agent icon (circular avatar per CLI tool)
+  - Session title (bold, user-defined)
+  - Last activity timestamp
+  - Status indicator (working spinner / idle zzZ) with smooth fade transition
+  - One-line preview of last agent output (via xterm.js buffer reading)
+  - Context menu (down-arrow on hover) with Profile and Delete options
+- Session status: working / idle detection:
+  - Network-based: output rate >= 800B/s + burst increasing + no user typing = working
+  - Idle: output rate < 800B/s + burst not increasing, sustained ~1.5s
+  - Per-session process stats (CPU, memory, network) via process group tracking
+  - Stats overlay toggle in Settings > Appearance > Monitoring
+- Agent output detection via `outputMarker` field per agent preset:
+  - Each agent declares its output line marker (⏺ Claude, • Codex, ✦ Gemini, │ OpenCode)
+  - Buffer reader scans xterm.js screen bottom-up for the marker to extract last agent message
+  - Works across themes since it reads character content, not colors
 
 Not done
 - Resume UI (show resumable sessions in sidebar, resume button)
 - Project hierarchy and project-scoped session filtering
 - Folder picker polish (hidden dirs, clearer error/disabled states)
-- Session metadata (timestamps, previews, unread state)
-- Session status: idle / working (heuristic detection)
-- WhatsApp-style session list layout (thumbnails, preview text, timestamps)
+- Session metadata (createdAt, lastInputAt, lastOutputAt, lastViewedAt, unread state)
 - Search
 - `All` / `Unread` filters
 - Prompt library UI and injection flow
+- Timestamp formatting rules (today: time, yesterday: "Yesterday", within week: weekday, older: date)
+- Remove temporary stats/debug code after experiments are done
 
 Next Phase Priorities
 
@@ -110,13 +118,7 @@ Next Phase Priorities
 - clearer disabled/error states
 - better validation feedback when a path cannot be resolved
 
-2. Left Navigation Rail — DONE
-- Slim 48px icon rail on the far left with SVG icons.
-- Acts as a unified menu: Sessions, Projects, Prompt Library switch sidebar panels; Settings opens overlay.
-- Active icon highlighted, panels switch instantly, settings close button removed (rail is the menu).
-- Projects and Prompt Library panels show "Coming soon" placeholders.
-
-3. Projects
+2. Projects
 - Add a lightweight project layer above sessions.
 - A project is a grouping container for multiple sessions.
 - The hierarchy should become:
@@ -138,23 +140,7 @@ Session behavior
 - If the user does not choose one, assign it to the default fallback project.
 - Switching projects should scope the visible session list to that project.
 
-Why this matters
-- It matches the real workflow: one project containing multiple agent sessions.
-- It reduces session-list noise.
-- It creates a natural place for future project-level defaults:
-- default path
-- preferred commands
-- prompt sets
-
-4. Profiles / Theme System — DONE
-- 10 built-in theme presets with full ANSI palettes in `themes.js`.
-- Profiles in config: name, themeId, accentColor.
-- Per-session profile switching via colored dot in sidebar (opens preset picker dropdown).
-- Progressive settings UI: single profile = simple "Appearance"; multiple = "Terminal Styles" cards with star-for-default.
-- Custom theme dropdown with color preview strips (no native selects).
-- Theme changes apply instantly to running terminals.
-
-5. Session Metadata Layer
+3. Session Metadata Layer
 - Add per-session metadata needed for richer list behavior.
 - Track:
 - `createdAt`
@@ -163,158 +149,26 @@ Why this matters
 - `lastViewedAt`
 - `lastActivityAt`
 - `lastPreviewText`
-- `lastPreviewSource` (input or output, but UI can render the same either way)
 - command id/label
 - command type / icon id
 - project id
 - cwd
 - This is the foundation for timestamps, previews, search, and unread.
 
-6. Session Status: Idle / Working
-- Add a visible live status for each session so the user can quickly tell whether an agent is currently active.
-- Initial statuses:
-- `working`
-- `idle`
-
-Recommended v1 detection model
-- Do not try to infer deep semantic state from raw terminal text alone.
-- Start with a timing-based heuristic built on session metadata:
-- when the user sends input that likely starts work, mark the session as `working`
-- while terminal output continues arriving, keep it `working`
-- after a quiet period with no output for a short timeout, switch it back to `idle`
-- Treat PTY output as the primary truth signal because it is direct and reliable.
-
-Suggested metadata / timers
-- `lastStatus`
-- `lastStatusAt`
-- `lastWorkStartAt`
-- `lastOutputAt`
-- `lastInputAt`
-- per-session idle timeout handle (server-side derived state)
-
-Smart behavior
-- Reset the idle timer on each output chunk.
-- Only mark `working` on meaningful input, not every keystroke if possible.
-- Best practical v1 rule:
-- mark `working` when Enter is submitted to the PTY
-- fall back to `working` on any input event if exact submit detection is not available
-
-Future refinement
-- Allow command-specific status adapters later.
-- Some CLI agents may expose stronger signals:
-- resume/wait states
-- explicit "working" text patterns
-- prompt reappearance meaning "idle"
-- Optionally add local CPU / process activity as a secondary hint, not the primary source of truth.
-- If added later, CPU should only extend or increase confidence in `working`; it should not override PTY output on its own.
-- Any CPU-based check should consider the session process tree / process group, not just a single PID.
-- Keep the core system generic, then let specific commands opt into better status detection.
-
-UI placement
-- Show the status directly in the session pill.
-- Preferred treatment:
-- small status icon to the left of the preview line
-- status icon should sit inline before the last preview text
-- `working` should be visually distinct but subtle
-- `idle` should be quiet and low-emphasis
-- The preview text should read like a live status line, for example:
-- working icon + `Compiling main.go...`
-- idle icon + `Waiting for input...`
-
-7. Session Preservation Across Node Restarts
-- Add session restoration after the Node server is closed and started again.
-- Do not try to preserve the original PTY process itself across server shutdown.
-- Instead, restore compatible sessions by relaunching the CLI and using that agent's own resume flow.
-- Session restoration must be capability-based:
-- some commands support resume
-- some commands do not
-- each configured command should be able to declare whether it supports resume and how
-
-Required persisted data for resumable sessions
-- command id / label
-- cwd
-- launch command
-- resume strategy / resume command template
-- any agent-specific resume token, task id, conversation id, or checkpoint data
-- last known display name
-
-Command model extension
-- Each command config should optionally include resumability metadata.
-- Suggested fields:
-- `canResume`
-- `resumeCommand` or `resumeArgsTemplate`
-- `resumeMode` (agent-specific strategy)
-
-Coding-agent wrapper reference
-- The local Rocie `coding-agent` wrapper explicitly supports resume.
-- Its resume flow is:
-- `node skills/coding-agent/run_coding_agent.mjs --resume --task "<ANSWER>" --cwd <PROJECT_DIR>`
-- That means restoration must preserve the project working directory and enough agent state to invoke the resume path correctly.
-
-Restore UX
-- On startup, load previously persisted sessions.
-- For resumable sessions:
-- either auto-restore them
-- or show them as restorable and let the user restore intentionally
-- For non-resumable sessions:
-- preserve history/metadata in the UI if useful, but do not pretend the live session can continue.
-
-8. WhatsApp-Style Session List
-- Upgrade each session pill to show:
-- session thumbnail / avatar
-- manual session title (user-defined display name)
-- last activity timestamp
-- one-line preview of the latest visible terminal text
-- optional unread indicator
-- session status (`idle` / `working`) shown as an inline icon before the preview text
-
-Session thumbnail / avatar
-- Add a thumbnail at the left side of each session row.
-- Use the CLI agent identity as the source of the thumbnail.
-- Preferred approach:
-- use a real icon/logo per CLI agent when available
-- Fallback:
-- generate a simple default avatar from the command type / initials (`CD`, `CC`, etc.)
-- The thumbnail should be stable per command type so sessions are quickly scannable.
-
-Preview line behavior
-- The second line under the session title should show:
-- status icon first
-- then the first visible characters of the latest terminal text
-- The preview can come from either user input or agent output.
-- Do not force the user to care about source in the list; show the latest meaningful text regardless.
-- Truncate to a single line for scanability.
-
-Layout reference
-- Follow the mockup-style structure:
-- left: session thumbnail
-- center top: manual title
-- center bottom: status icon + preview text
-- right: last activity timestamp
-- Timestamp rules:
-- today: exact time
-- yesterday: `Yesterday`
-- within a week: weekday name
-- older: date
-
-9. Search
+4. Search
 - Add a search bar above the session list.
 - Recommended v1 search scope:
 - session name
 - last preview text
 - optional rolling terminal buffer
-- Note:
-- PTY traffic is raw terminal output, not structured messages.
-- True user-message vs agent-message search will require explicit input/output history tracking or parsing rules.
 
-10. Filters: All / Unread
+5. Filters: All / Unread
 - Add two pill filters:
 - `All`
 - `Unread`
 - Unread should derive from output activity since last view/read event.
-- Define the exact “mark as read” rule when implementing.
 
-11. Prompt Library
+6. Prompt Library
 - Add a prompt library section in Settings.
 - Store reusable prompts/templates in config.
 - v1 interaction:
@@ -322,12 +176,11 @@ Layout reference
 - insert into active PTY
 - optional mode to auto-send with newline
 
-12. Session Creation Enhancements — PARTIALLY DONE
-- Inline creator card replaces the old launcher dropdown.
-- Agent presets (Claude Code, Codex, Gemini CLI, Shell) rendered as buttons with icons.
-- MRU ordering: last-used agent at top, Shell always last.
-- Random fun session names as placeholders (Color + Animal combos).
-- Auto-creates matching command in config from preset if not found.
+7. Resume UI
+- Show resumable sessions in sidebar with resume button.
+- Wire up to existing backend resume infrastructure.
+
+8. Session Creation Enhancements
 - Still TODO: per-command default profile, per-command default working directory override.
 
 Design Notes
@@ -335,7 +188,6 @@ Design Notes
 - Progressive disclosure: simple Appearance section when one profile, full Terminal Styles cards when multiple.
 - The refactor is a good baseline; further feature work should preserve module boundaries.
 - New features should be implemented on top of explicit session metadata, not inferred from DOM state.
-- Two agents work in parallel: one on UI (this workplan), one on command/resume schema. Do not modify config.js DEFAULTS or agent-presets.json from the UI side.
 
 Known Review Note
 - Keep the static file serving path traversal protection intact as the server evolves.
@@ -344,13 +196,10 @@ Open Questions
 - Should `Projects` be its own rail view with a project list, or should it directly switch the session column into grouped project mode?
 - Should the fallback project be called `General`, `Inbox`, or `No Project`?
 - Should profiles stay purely visual in v1, or also include command/path defaults?
-- Should status switch to `working` only on Enter, or on any input event in v1?
-- What idle timeout feels right for `working` → `idle` without flicker?
 - Should resumable sessions auto-restore on startup, or should restore always be explicit?
 - How should we represent non-resumable historical sessions after restart: archive, closed entry, or hide them?
 - Should unread clear on focus, click, or only after explicit interaction?
 - Should prompt library default to paste-only, or paste-and-send?
-- Should we show per-command badges/icons in the session list?
 - Should the folder picker allow hidden directories in an advanced mode?
 
 Recommended Order (remaining)
@@ -358,8 +207,6 @@ Recommended Order (remaining)
 - Add lightweight project model + project-scoped session filtering
 - Polish folder picker (hidden dirs, error states)
 - Add session metadata tracking (timestamps, previews)
-- Add heuristic session status (`idle` / `working`)
-- Upgrade session list to WhatsApp-style layout (thumbnails, preview text, timestamps)
 - Add search
 - Add `All` / `Unread` filters
 - Add prompt library UI and injection flow

@@ -7,7 +7,8 @@
     "isAgent": true,
     "canResume": true,
     "resumeCommand": "claude --resume {{sessionId}}",
-    "sessionIdPattern": "Session ID:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    "sessionIdPattern": "Session ID:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+    "outputMarker": "⏺"
   },
   {
     "presetId": "codex",
@@ -17,7 +18,8 @@
     "isAgent": true,
     "canResume": true,
     "resumeCommand": "codex resume {{sessionId}}",
-    "sessionIdPattern": "Session:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    "sessionIdPattern": "Session:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+    "outputMarker": "•"
   },
   {
     "presetId": "gemini-cli",
@@ -27,7 +29,8 @@
     "isAgent": true,
     "canResume": true,
     "resumeCommand": "gemini --resume {{sessionId}}",
-    "sessionIdPattern": "Session ID:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    "sessionIdPattern": "Session ID:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+    "outputMarker": "✦"
   },
   {
     "presetId": "opencode",
@@ -37,7 +40,8 @@
     "isAgent": true,
     "canResume": true,
     "resumeCommand": "opencode --session {{sessionId}}",
-    "sessionIdPattern": "(ses_[a-zA-Z0-9]{10,})"
+    "sessionIdPattern": "(ses_[a-zA-Z0-9]{10,})",
+    "outputMarker": "│"
   },
   {
     "presetId": "shell",
@@ -47,6 +51,7 @@
     "isAgent": false,
     "canResume": false,
     "resumeCommand": null,
-    "sessionIdPattern": null
+    "sessionIdPattern": null,
+    "outputMarker": null
   }
 ]

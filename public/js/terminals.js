@@ -4,9 +4,16 @@ import { resolveTheme, resolveAccent, applyTheme } from './profiles.js';
 
 // --- Helpers ---
 
-// Strip all ANSI/VT escape sequences + control chars
-const stripAnsi = s => s.replace(/\x1b[\[\]()#;?]*[0-9;]*[a-zA-Z@`]|\x1b\].*?(?:\x07|\x1b\\)|\x1b.|\r|\x07/g, '');
-const timeNow = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+function formatTime(ts) {
+  const d = new Date(ts), now = new Date();
+  const days = Math.floor((now - d) / 86400000);
+  if (days === 0 && d.getDate() === now.getDate())
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (days < 2 && (now.getDate() - d.getDate() === 1 || (now.getDate() < d.getDate() && days < 2)))
+    return 'Yesterday';
+  if (days < 7) return d.toLocaleDateString([], { weekday: 'long' });
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
 
 
 const TERMINAL_SVG = `<svg class="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`;
@@ -142,11 +149,11 @@ export function addTerminal(id, name, profileId, commandId) {
     <div class="flex-1 min-w-0">
       <div class="flex items-baseline justify-between gap-2">
         <span class="name font-semibold text-[13px] text-slate-200 truncate">${esc(name)}</span>
-        <span class="session-time text-[11px] text-slate-500 flex-shrink-0">${timeNow()}</span>
+        <span class="session-time text-[11px] text-slate-500 flex-shrink-0">${formatTime(Date.now())}</span>
       </div>
       <div class="flex items-center gap-1.5 mt-0.5">
         <span class="session-status text-emerald-500 flex-shrink-0 leading-none" style="transition:opacity 0.2s">${SPINNER_SVG}</span>
-        <span class="session-preview text-xs text-slate-500 truncate">Starting...</span>
+        <span class="session-preview text-xs text-slate-500 truncate"></span>
       </div>
     </div>
     <button class="menu-btn opacity-0 group-hover:opacity-100 text-slate-500 hover:text-slate-300 flex-shrink-0 p-0.5 transition-opacity" title="Menu">
@@ -170,7 +177,7 @@ export function addTerminal(id, name, profileId, commandId) {
   term.open(el);
   term.onData(data => send({ type: 'input', id, data }));
 
-  state.terms.set(id, { term, fit, el, profileId, commandId, outputBuf: '', working: true });
+  state.terms.set(id, { term, fit, el, profileId, commandId, working: true, lastActivityAt: Date.now() });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';
 }
@@ -218,25 +225,71 @@ export function select(id) {
 
 // --- Preview & status ---
 
-export function updatePreview(id, rawData) {
+export function updatePreview(id) {
   const entry = state.terms.get(id);
   if (!entry) return;
-  // Just accumulate output — preview text updated when status goes idle
-  entry.outputBuf = (entry.outputBuf + rawData).slice(-1000);
+  const last = readLastAgentLine(entry.term, entry.commandId);
+  const el = document.querySelector(`.group[data-id="${id}"] .session-preview`);
+  if (el && last && el.textContent !== last) {
+    el.textContent = last;
+    entry.lastActivityAt = Date.now();
+  }
+  const timeEl = document.querySelector(`.group[data-id="${id}"] .session-time`);
+  if (timeEl) timeEl.textContent = formatTime(entry.lastActivityAt);
 }
 
-// Called by setStatus when transitioning to idle
-function flushPreview(id) {
-  const entry = state.terms.get(id);
-  if (!entry) return;
-  const clean = stripAnsi(entry.outputBuf).replace(/[^\x20-\x7E]/g, ' ');
-  const lines = clean.split('\n').map(l => l.trim()).filter(Boolean);
-  const last = lines.length ? lines[lines.length - 1] : '';
-  const el = document.querySelector(`.group[data-id="${id}"] .session-preview`);
-  if (el && last) el.textContent = last;
-  const timeEl = document.querySelector(`.group[data-id="${id}"] .session-time`);
-  if (timeEl) timeEl.textContent = timeNow();
-  entry.outputBuf = '';
+// Read the terminal buffer bottom-up, return the last line
+// where most characters use default foreground and aren't dim
+function readLineText(buf, y) {
+  const line = buf.getLine(y);
+  if (!line) return '';
+  let text = '';
+  for (let x = 0; x < line.length; x++) {
+    text += line.getCell(x)?.getChars() || ' ';
+  }
+  return text.trimEnd();
+}
+
+function readLastAgentLine(term, commandId) {
+  const marker = state.cfg.commands.find(c => c.id === commandId)?.outputMarker;
+  if (!marker) return '';
+  const buf = term.buffer.active;
+  for (let y = buf.baseY + buf.cursorY; y >= 0; y--) {
+    const text = readLineText(buf, y).trim();
+    if (!text || !text.startsWith(marker)) continue;
+    const content = text.slice(marker.length).trim();
+    if (content) return content;
+  }
+  return '';
+}
+
+// TEMPORARY: debug — dump last N lines of buffer with their stats
+export function debugBuffer(term) {
+  const buf = term.buffer.active;
+  const lines = [];
+  const startY = Math.max(0, buf.baseY + buf.cursorY - 15);
+  for (let y = startY; y <= buf.baseY + buf.cursorY; y++) {
+    const line = buf.getLine(y);
+    if (!line) continue;
+    let text = '', total = 0, strong = 0, modes = new Set();
+    for (let x = 0; x < line.length; x++) {
+      const cell = line.getCell(x);
+      if (!cell) continue;
+      const ch = cell.getChars();
+      text += ch || ' ';
+      if (!ch || ch === ' ') continue;
+      total++;
+      const mode = cell.getFgColorMode();
+      const dim = cell.isDim();
+      modes.add(`m${mode}${dim ? 'd' : ''}`);
+      if (mode === 0 && !dim) strong++;
+    }
+    text = text.trimEnd();
+    if (!text) continue;
+    const pct = total ? Math.round(strong / total * 100) : 0;
+    lines.push(`y${y} [${pct}% strong] [${[...modes].join(',')}] "${text.slice(0, 50)}"`);
+  }
+  return lines.join('\n');
 }
 
 function setStatus(id, working) {
@@ -256,7 +309,6 @@ function setStatus(id, working) {
     } else {
       el.className = 'session-status text-slate-600 flex-shrink-0 text-[11px] leading-none';
       el.innerHTML = '<span>z<sup>z</sup>Z</span>';
-      flushPreview(id);
     }
     el.style.opacity = '1';
   }, 200);
@@ -300,5 +352,13 @@ export function startRename(id) {
   el.addEventListener('blur', finish, { once: true });
   el.addEventListener('keydown', onKey);
 }
+
+// Refresh displayed timestamps every 60s so they age naturally
+setInterval(() => {
+  for (const [id, entry] of state.terms) {
+    const timeEl = document.querySelector(`.group[data-id="${id}"] .session-time`);
+    if (timeEl) timeEl.textContent = formatTime(entry.lastActivityAt);
+  }
+}, 60000);
 
 export { openMenu, closeMenu, setStatus };

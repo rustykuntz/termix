@@ -47,6 +47,7 @@ function createFromPreset(preset, sessionName) {
       canResume: preset.canResume,
       resumeCommand: preset.resumeCommand,
       sessionIdPattern: preset.sessionIdPattern,
+      outputMarker: preset.outputMarker || null,
     };
     state.cfg.commands.push(cmd);
     send({ type: 'config.update', config: state.cfg });

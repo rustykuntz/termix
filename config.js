@@ -45,6 +45,7 @@ function migrate(cfg) {
     if (cmd.canResume === undefined)        cmd.canResume = preset?.canResume ?? false;
     if (cmd.resumeCommand === undefined)    cmd.resumeCommand = preset?.resumeCommand || null;
     if (cmd.sessionIdPattern === undefined) cmd.sessionIdPattern = preset?.sessionIdPattern || null;
+    if (cmd.outputMarker === undefined)     cmd.outputMarker = preset?.outputMarker || null;
   }
   // Auto-add any shipped presets not yet in the commands list
   for (const preset of PRESETS) {
@@ -55,6 +56,7 @@ function migrate(cfg) {
         command: preset.command, enabled: true, defaultPath: '',
         isAgent: preset.isAgent, canResume: preset.canResume,
         resumeCommand: preset.resumeCommand, sessionIdPattern: preset.sessionIdPattern,
+        outputMarker: preset.outputMarker || null,
       });
     }
   }

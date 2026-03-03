@@ -1,5 +1,5 @@
 import { state, send } from './state.js';
-import { addTerminal, removeTerminal, select, startRename, setSessionProfile, updatePreview, openMenu, closeMenu, setStatus } from './terminals.js';
+import { addTerminal, removeTerminal, select, startRename, setSessionProfile, openMenu, closeMenu, setStatus, debugBuffer, updatePreview } from './terminals.js';
 import { renderSettings } from './settings.js';
 import { openCreator, closeCreator } from './creator.js';
 import { handleDirsResponse } from './folder-picker.js';
@@ -46,7 +46,7 @@ function connect() {
         break;
       case 'output':
         state.terms.get(msg.id)?.term.write(msg.data);
-        updatePreview(msg.id, msg.data);
+        updatePreview(msg.id);
         break;
       case 'closed':
         removeTerminal(msg.id);
@@ -56,11 +56,14 @@ function connect() {
         const el = document.getElementById('stats-overlay');
         const id = state.active;
         const s = id && msg.stats[id];
+        // Debug: dump buffer analysis for active terminal
+        const activeEntry = id && state.terms.get(id);
+        const bufDump = activeEntry ? debugBuffer(activeEntry.term) : '';
         if (el) el.innerHTML = s ? [
           `CPU ${s.cpu.toFixed(1)}%  ·  MEM ${s.memMB} MB`,
           `↑${s.rateOut || '0 B/s'}  ↓${s.rateIn || '0 B/s'}  ·  IN ${s.netIn || '0 B'}  OUT ${s.netOut || '0 B'}`,
           `Silence ${s.silence || '-'}  ·  Burst ${s.burst || '-'}  ·  Chunks ${s.chunks || 0}  ·  AvgChunk ${s.avgChunk || 0}B`,
-          `<span class="text-slate-500">${s.lastLine ? s.lastLine.slice(0, 60) : '-'}</span>`,
+          `<pre class="text-[10px] text-slate-400 mt-1 whitespace-pre leading-tight">${bufDump}</pre>`,
         ].join('<br>') : '';
         // Working/idle detection per session
         for (const [sid, st] of Object.entries(msg.stats)) {
