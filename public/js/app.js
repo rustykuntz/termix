@@ -288,7 +288,7 @@ function showTelemetrySetup(commandId, sessionId) {
   // Skip if telemetry is already configured via settings
   if (cmd.telemetryEnabled && cmd.telemetryStatus?.ok) return;
   const bin = cmd.command.split('/').pop().split(' ')[0];
-  const preset = state.presets.find(p => p.command.split('/').pop() === bin);
+  const preset = state.presets.find(p => p.command.split('/').pop().split(' ')[0] === bin);
   if (!preset?.telemetrySetup || shownSetup.has(preset.presetId)) return;
   shownSetup.add(preset.presetId);
 

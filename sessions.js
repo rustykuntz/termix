@@ -27,7 +27,7 @@ function broadcast(msg) {
 
 function buildTelemetryEnv(id, cmd) {
   const bin = cmd.command.split('/').pop().split(' ')[0];
-  const preset = PRESETS.find(p => p.command.split('/').pop() === bin);
+  const preset = PRESETS.find(p => p.command.split('/').pop().split(' ')[0] === bin);
   if (!preset?.telemetryEnv || !cmd.telemetryEnabled) return {};
   const env = {};
   for (const [k, v] of Object.entries(preset.telemetryEnv)) {
@@ -66,7 +66,7 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
 
   // Watch for telemetry — if config isn't set up, frontend will prompt
   const bin = cmd.command.split('/').pop().split(' ')[0];
-  const preset = PRESETS.find(p => p.command.split('/').pop() === bin);
+  const preset = PRESETS.find(p => p.command.split('/').pop().split(' ')[0] === bin);
   if (preset?.telemetrySetup && !(cmd.telemetryEnabled && cmd.telemetryStatus?.ok)) telemetry.watchSession(id);
   if (preset?.bridge === 'opencode') opencodeBridge.watchSession(id, cwd);
 
