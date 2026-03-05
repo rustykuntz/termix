@@ -50,7 +50,7 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
   }
 
   const sessionIdRe = cmd.sessionIdPattern ? new RegExp(cmd.sessionIdPattern) : null;
-  const session = { name, themeId, commandId, cwd, pty: term, buffer: '', sessionToken: savedToken || null, projectId: projectId || null };
+  const session = { name, themeId, commandId, cwd, pty: term, chunks: [], chunksSize: 0, sessionToken: savedToken || null, projectId: projectId || null };
   sessions.set(id, session);
 
   // Watch for telemetry — if config isn't set up, frontend will prompt
@@ -59,11 +59,14 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
   if (preset?.telemetrySetup && cmd.telemetryEnabled) telemetry.watchSession(id);
 
   term.onData((data) => {
-    session.buffer += data;
-    if (session.buffer.length > MAX_BUFFER) session.buffer = session.buffer.slice(-MAX_BUFFER);
+    session.chunks.push(data);
+    session.chunksSize += data.length;
+    while (session.chunksSize > MAX_BUFFER && session.chunks.length > 1) {
+      session.chunksSize -= session.chunks.shift().length;
+    }
     // Capture session ID from output
     if (sessionIdRe && !session.sessionToken) {
-      const match = session.buffer.match(sessionIdRe);
+      const match = session.chunks.join('').match(sessionIdRe);
       if (match) session.sessionToken = match[1];
     }
     stats.trackOut(id, data); // TEMPORARY
@@ -193,7 +196,7 @@ function getResumable() { return resumable; }
 
 function sendBuffers(ws) {
   for (const [id, s] of sessions) {
-    if (s.buffer) ws.send(JSON.stringify({ type: 'output', id, data: s.buffer }));
+    if (s.chunks.length) ws.send(JSON.stringify({ type: 'output', id, data: s.chunks.join('') }));
   }
 }
 

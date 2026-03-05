@@ -95,7 +95,10 @@
     <div id="terminals" class="absolute inset-0" style="pointer-events:none"></div>
     <!-- TEMPORARY: stats overlay -->
     <div id="stats-overlay" class="absolute top-2 right-3 z-[100] text-[11px] font-mono text-green-400 px-3 py-2 rounded shadow-lg pointer-events-none" style="background:var(--color-stats-bg)"></div>
-    <div id="empty" class="absolute inset-0 flex items-center justify-center text-slate-600 text-sm">Press + to create a session</div>
+    <div id="empty" class="absolute inset-0 flex flex-col items-center justify-center select-none">
+      <img src="/img/termix-logo-terminal-panel.png" alt="Termix" class="w-44 opacity-60 mb-5" draggable="false">
+      <p class="text-slate-500 text-[13px] leading-relaxed text-center">Press <kbd class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px] font-mono">+</kbd> to start a new session<br>or resume a previous one from the sidebar</p>
+    </div>
 
     <!-- Settings overlay (content panels only — category nav is in sidebar panel-settings) -->
     <div id="settings-overlay" class="absolute inset-0 z-[200] bg-slate-950 hidden overflow-y-auto">

@@ -294,13 +294,21 @@ export function addTerminal(id, name, themeId, commandId, projectId) {
   term.onData(data => send({ type: 'input', id, data }));
 
   term.open(el);
+  let fitted = false, pending = [];
   const ro = new ResizeObserver(() => {
     if (!el.offsetWidth) return;
     fit.fit();
     send({ type: 'resize', id, cols: term.cols, rows: term.rows });
+    if (!fitted) {
+      fitted = true;
+      for (const chunk of pending) term.write(chunk);
+      pending = null;
+    }
   });
   ro.observe(el);
-  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, working: true, stopBounce, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '' });
+  // Safety: if RO hasn't fired within 500ms, flush anyway to avoid unbounded queue
+  setTimeout(() => { if (!fitted) { fitted = true; for (const chunk of pending) term.write(chunk); pending = null; } }, 500);
+  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, working: true, stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '' });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';
 

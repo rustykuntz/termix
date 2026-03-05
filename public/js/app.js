@@ -52,11 +52,13 @@ function connect() {
         select(msg.id);
         applyFilter();
         break;
-      case 'output':
-        state.terms.get(msg.id)?.term.write(msg.data);
+      case 'output': {
+        const entry = state.terms.get(msg.id);
+        if (entry && !entry.queue(msg.data)) entry.term.write(msg.data);
         updatePreview(msg.id);
         markUnread(msg.id);
         break;
+      }
       case 'closed':
         removeTerminal(msg.id);
         break;
