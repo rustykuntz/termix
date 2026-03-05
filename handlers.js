@@ -22,7 +22,8 @@ function onConnection(ws) {
   sessions.sendBuffers(ws);
 
   ws.on('message', (raw) => {
-    const msg = JSON.parse(raw);
+    let msg;
+    try { msg = JSON.parse(raw); } catch { return; }
 
     switch (msg.type) {
       case 'create':          sessions.create(msg, ws, cfg); break;

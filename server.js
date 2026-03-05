@@ -29,7 +29,10 @@ const server = http.createServer((req, res) => {
   // Some agents (Gemini) POST to / instead of /v1/logs
   if (req.method === 'POST' && (req.url === '/v1/logs' || req.url === '/')) {
     let body = '';
-    req.on('data', chunk => body += chunk);
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > 1e6) { req.destroy(); return; }
+    });
     req.on('end', () => {
       const contentType = req.headers['content-type'] || '';
       try { req.body = JSON.parse(body); } catch {
@@ -74,4 +77,4 @@ function onShutdown() {
 process.on('SIGINT', onShutdown);
 process.on('SIGTERM', onShutdown);
 
-server.listen(PORT, () => console.log(`Terminal UI → http://localhost:${PORT}`));
+server.listen(PORT, '127.0.0.1', () => console.log(`Terminal UI → http://localhost:${PORT}`));

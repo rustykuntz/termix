@@ -220,7 +220,10 @@ export function addTerminal(id, name, themeId, commandId, projectId) {
   term.onData(data => send({ type: 'input', id, data }));
 
   term.open(el);
-  state.terms.set(id, { term, fit, el, themeId, commandId, projectId: projectId || null, working: true, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '', opened: true });
+  fit.fit();
+  const ro = new ResizeObserver(() => { if (el.classList.contains('active')) fit.fit(); });
+  ro.observe(el);
+  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, working: true, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '' });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';
 
@@ -230,6 +233,7 @@ export function addTerminal(id, name, themeId, commandId, projectId) {
 export function removeTerminal(id) {
   const entry = state.terms.get(id);
   if (!entry) return;
+  entry.ro?.disconnect();
   entry.term.dispose();
   entry.el.remove();
   state.terms.delete(id);
@@ -466,14 +470,9 @@ function projectColor(project) {
   return project.color || PROJECT_COLORS[0];
 }
 
-function buildSessionRow(id) {
-  return document.querySelector(`.group[data-id="${id}"]`);
-}
-
 export function regroupSessions() {
   const list = document.getElementById('session-list');
   const projects = state.cfg.projects || [];
-  const resumableSection = document.getElementById('resumable-section');
 
   // Detach all session rows (preserve DOM nodes)
   const rows = new Map();
@@ -481,8 +480,10 @@ export function regroupSessions() {
     const row = document.querySelector(`.group[data-id="${id}"]`);
     if (row) { row.remove(); rows.set(id, row); }
   }
-  // Remove old project headers
+  // Remove old project headers, resumable rows, and resumable section
   list.querySelectorAll('.project-group').forEach(el => el.remove());
+  list.querySelectorAll('[data-resumable-id]').forEach(el => el.remove());
+  document.getElementById('resumable-section')?.remove();
 
   // Render project groups
   for (const proj of projects) {
@@ -503,11 +504,10 @@ export function regroupSessions() {
       </div>
       <div class="project-sessions ${collapsed ? 'hidden' : ''}"></div>`;
 
-    if (resumableSection) list.insertBefore(header, resumableSection);
-    else list.appendChild(header);
+    list.appendChild(header);
   }
 
-  // Place sessions into their groups or ungrouped at top
+  // Place active sessions into their groups or ungrouped at top
   const ungrouped = [];
   for (const [id, entry] of state.terms) {
     const row = rows.get(id);
@@ -519,14 +519,32 @@ export function regroupSessions() {
     ungrouped.push(row);
   }
 
-  // Insert ungrouped sessions before first project group (or before resumable)
   const firstGroup = list.querySelector('.project-group');
-  const insertBefore = firstGroup || resumableSection || null;
-  for (const row of ungrouped) {
-    list.insertBefore(row, insertBefore);
+  for (const row of ungrouped) list.insertBefore(row, firstGroup);
+
+  // Place resumable sessions into their project groups or ungrouped section
+  const ungroupedResumable = [];
+  for (const s of state.resumable) {
+    const row = buildResumableRow(s);
+    if (s.projectId) {
+      const container = list.querySelector(`.project-group[data-project-id="${s.projectId}"] .project-sessions`);
+      if (container) { container.appendChild(row); continue; }
+    }
+    ungroupedResumable.push(row);
   }
 
-  // Update counts
+  // Ungrouped resumable → "Previous Sessions" section at the bottom
+  if (ungroupedResumable.length) {
+    const section = document.createElement('div');
+    section.id = 'resumable-section';
+    section.innerHTML = `<div class="resumable-header px-2.5 py-2 mt-1 border-t border-slate-700/50">
+      <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Previous Sessions</span>
+    </div>`;
+    for (const row of ungroupedResumable) section.appendChild(row);
+    list.appendChild(section);
+  }
+
+  // Update counts (active + resumable inside each project)
   for (const proj of projects) {
     const container = list.querySelector(`.project-group[data-project-id="${proj.id}"] .project-sessions`);
     const countEl = list.querySelector(`.project-group[data-project-id="${proj.id}"] .project-count`);
@@ -562,51 +580,36 @@ export function setSessionProject(id, projectId) {
 
 const PLAY_SVG = `<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>`;
 
-export function renderResumable() {
-  const list = document.getElementById('session-list');
-  let section = document.getElementById('resumable-section');
-
-  if (!state.resumable.length) {
-    if (section) section.remove();
-    return;
-  }
-
-  if (!section) {
-    section = document.createElement('div');
-    section.id = 'resumable-section';
-  }
-
-  section.innerHTML =
-    `<div class="resumable-header px-2.5 py-2 mt-1 border-t border-slate-700/50">
-      <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Previous Sessions</span>
-    </div>` +
-    state.resumable.map(s => {
-      const cmd = state.cfg.commands.find(c => c.id === s.commandId);
-      const label = cmd?.label || 'Session';
-      const time = formatTime(new Date(s.savedAt).getTime());
-      const path = shortPath(s.cwd);
-      return `
-    <div class="group resumable-row flex items-center gap-2 px-2.5 py-2 cursor-pointer hover:bg-slate-800/30 transition-colors" data-resumable-id="${s.id}">
-      <div class="w-8 h-8 rounded-full bg-slate-800/50 flex items-center justify-center flex-shrink-0 overflow-hidden opacity-40">
-        ${iconHtml(s.commandId)}
+function buildResumableRow(s) {
+  const cmd = state.cfg.commands.find(c => c.id === s.commandId);
+  const label = cmd?.label || 'Session';
+  const time = formatTime(new Date(s.savedAt).getTime());
+  const path = shortPath(s.cwd);
+  const row = document.createElement('div');
+  row.className = 'group resumable-row flex items-center gap-2 px-2.5 py-2 cursor-pointer hover:bg-slate-800/30 transition-colors';
+  row.dataset.resumableId = s.id;
+  row.innerHTML = `
+    <div class="w-8 h-8 rounded-full bg-slate-800/50 flex items-center justify-center flex-shrink-0 overflow-hidden opacity-40">
+      ${iconHtml(s.commandId)}
+    </div>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-baseline gap-2">
+        <span class="resumable-name flex-1 font-semibold text-[13px] text-slate-400 truncate">${esc(s.name)}</span>
+        <span class="text-[11px] text-slate-600 flex-shrink-0">${time}</span>
       </div>
-      <div class="flex-1 min-w-0">
-        <div class="flex items-baseline gap-2">
-          <span class="resumable-name flex-1 font-semibold text-[13px] text-slate-400 truncate">${esc(s.name)}</span>
-          <span class="text-[11px] text-slate-600 flex-shrink-0">${time}</span>
-        </div>
-        <div class="flex items-center gap-1 mt-0.5">
-          <span class="flex-1 text-xs text-slate-600 truncate">${esc(label)}${path ? ' · ' + esc(path) : ''}</span>
-          <button class="resume-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-emerald-400 flex-shrink-0 transition-all" title="Resume session">
-            ${PLAY_SVG}
-          </button>
-        </div>
+      <div class="flex items-center gap-1 mt-0.5">
+        <span class="flex-1 text-xs text-slate-600 truncate">${esc(label)}${path ? ' · ' + esc(path) : ''}</span>
+        <button class="resume-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-emerald-400 flex-shrink-0 transition-all" title="Resume session">
+          ${PLAY_SVG}
+        </button>
       </div>
     </div>`;
-    }).join('');
+  return row;
+}
 
-  list.appendChild(section);
-  applyFilter();
+export function renderResumable() {
+  // Just rebuild rows and let regroupSessions place them
+  regroupSessions();
 }
 
 // --- Filtering ---
@@ -614,6 +617,8 @@ export function renderResumable() {
 export function applyFilter() {
   const { query, tab } = state.filter;
   const q = query.toLowerCase();
+
+  // Filter active sessions
   for (const [id, entry] of state.terms) {
     const el = document.querySelector(`.group[data-id="${id}"]`);
     if (!el) continue;
@@ -622,10 +627,15 @@ export function applyFilter() {
     const matchQuery = !q || name.includes(q) || (entry.searchText || '').toLowerCase().includes(q);
     el.style.display = matchTab && matchQuery ? '' : 'none';
   }
+
+  // Filter all resumable rows (both inside projects and ungrouped)
+  for (const row of document.querySelectorAll('[data-resumable-id]')) {
+    if (tab === 'unread') { row.style.display = 'none'; continue; }
+    const name = row.querySelector('.resumable-name')?.textContent.toLowerCase() || '';
+    row.style.display = !q || name.includes(q) ? '' : 'none';
+  }
+
   // Show/hide project groups
-  // - With active search: show if project name matches or has visible children
-  // - No search + All tab: always show (empty projects should be visible)
-  // - No search + Unread tab: only show if has visible children
   for (const group of document.querySelectorAll('.project-group')) {
     const sessions = group.querySelector('.project-sessions');
     const hasVisible = sessions && [...sessions.children].some(c => c.style.display !== 'none');
@@ -638,19 +648,15 @@ export function applyFilter() {
     }
     group.style.display = show ? '' : 'none';
   }
-  // Resumable: hidden in Unread tab, filtered by name otherwise
+
+  // Ungrouped resumable section
   const section = document.getElementById('resumable-section');
   if (!section) return;
   if (tab === 'unread') { section.style.display = 'none'; return; }
   section.style.display = '';
-  let anyVisible = false;
-  for (const row of section.querySelectorAll('[data-resumable-id]')) {
-    const name = row.querySelector('.resumable-name')?.textContent.toLowerCase() || '';
-    const show = !q || name.includes(q);
-    row.style.display = show ? '' : 'none';
-    if (show) anyVisible = true;
-  }
-  section.querySelector('.resumable-header')?.style && (section.querySelector('.resumable-header').style.display = anyVisible ? '' : 'none');
+  const anyVisible = [...section.querySelectorAll('[data-resumable-id]')].some(r => r.style.display !== 'none');
+  const header = section.querySelector('.resumable-header');
+  if (header) header.style.display = anyVisible ? '' : 'none';
 }
 
 export function setTab(tab) {
