@@ -21,7 +21,12 @@ function randomName() {
 }
 
 function sortedPresets() {
-  const all = [...state.presets];
+  const all = [...state.presets].filter(p => {
+    const cmd = state.cfg.commands.find(c =>
+      c.command.split('/').pop().split(' ')[0] === p.command.split('/').pop().split(' ')[0]
+    );
+    return !cmd || cmd.enabled !== false;
+  });
   const shell = all.filter(p => !p.isAgent);
   const agents = all.filter(p => p.isAgent);
   const lastId = localStorage.getItem(MRU_KEY);
@@ -35,7 +40,7 @@ function sortedPresets() {
 function createFromPreset(preset, sessionName, cwd, projectId) {
   // Find existing command matching this preset
   let cmd = state.cfg.commands.find(c =>
-    c.command.split('/').pop().split(' ')[0] === preset.command
+    c.command.split('/').pop().split(' ')[0] === preset.command.split('/').pop().split(' ')[0]
   );
   // Auto-create the command if it doesn't exist yet
   if (!cmd) {

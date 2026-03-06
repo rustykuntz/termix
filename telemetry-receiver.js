@@ -39,11 +39,11 @@ function handleLogs(req, res) {
     // Fallback: if agent doesn't include termix.session_id (e.g. Gemini ignores
     // OTEL_RESOURCE_ATTRIBUTES), match by finding a pending session for this agent
     if (!resolvedId) {
-      for (const [id] of pendingSetup) {
+      for (const [id, pending] of pendingSetup) {
         const sess = sessionsFn?.()?.get(id);
         if (!sess) continue;
-        // Match: session has no telemetry activity yet
-        if (!activity.has(id)) { resolvedId = id; break; }
+        // Match: no activity yet, and agent type matches
+        if (!activity.has(id) && pending.bin && serviceName.includes(pending.bin)) { resolvedId = id; break; }
       }
       if (resolvedId) {
         console.log(`Telemetry: matched ${serviceName} to session ${resolvedId.slice(0, 8)} (no termix.session_id — fallback match)`);
@@ -95,21 +95,22 @@ function handleLogs(req, res) {
 }
 
 // Watch a newly spawned session — if no telemetry arrives, notify frontend
-function watchSession(termixId) {
+function watchSession(termixId, bin) {
   if (pendingSetup.has(termixId)) return;
-  pendingSetup.set(termixId, setTimeout(() => {
+  const timer = setTimeout(() => {
     pendingSetup.delete(termixId);
     // Don't fire if telemetry arrived between timer start and now
     if (!activity.has(termixId)) {
       broadcastFn?.({ type: 'session.needsSetup', id: termixId });
     }
-  }, 10000));
+  }, 10000);
+  pendingSetup.set(termixId, { timer, bin });
 }
 
 function cancelPendingSetup(termixId) {
   const pending = pendingSetup.get(termixId);
   if (pending) {
-    clearTimeout(pending);
+    clearTimeout(pending.timer);
     pendingSetup.delete(termixId);
   }
 }
@@ -117,7 +118,7 @@ function cancelPendingSetup(termixId) {
 function clear(id) {
   activity.delete(id);
   const pending = pendingSetup.get(id);
-  if (pending) { clearTimeout(pending); pendingSetup.delete(id); }
+  if (pending) { clearTimeout(pending.timer); pendingSetup.delete(id); }
 }
 
 // Returns true if we've received telemetry events for this session

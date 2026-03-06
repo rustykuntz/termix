@@ -21,7 +21,7 @@ let resumable = [];
 
 function broadcast(msg) {
   const raw = JSON.stringify(msg);
-  for (const c of clients) c.send(raw);
+  for (const c of clients) if (c.readyState === 1) c.send(raw);
 }
 
 // --- Spawn a PTY and wire up a session ---
@@ -68,7 +68,7 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
   // Watch for telemetry — if config isn't set up, frontend will prompt
   const bin = cmd.command.split('/').pop().split(' ')[0];
   const preset = PRESETS.find(p => p.command.split('/').pop().split(' ')[0] === bin);
-  if (preset?.telemetrySetup && !(cmd.telemetryEnabled && cmd.telemetryStatus?.ok)) telemetry.watchSession(id);
+  if (preset?.telemetrySetup && !(cmd.telemetryEnabled && cmd.telemetryStatus?.ok)) telemetry.watchSession(id, bin);
   if (preset?.bridge === 'opencode') opencodeBridge.watchSession(id, cwd);
 
   term.onData((data) => {
