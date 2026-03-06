@@ -17,7 +17,7 @@ Or run directly without installing:
 npx termix-cli
 ```
 
-Open [http://localhost:4000](http://localhost:4000). Click **+**, pick an agent, start working.
+Open [http://localhost:4000](http://localhost:4000). Click **+**, launch agents, start orchestrating.
 
 ## Supported Agents
 
