@@ -1,0 +1,19 @@
+# Source / build tooling
+src/
+tailwind.config.js
+
+# Local app state
+config.json
+sessions.json
+data/
+
+# Dev / repo files
+.claude/
+.git/
+.gitignore
+*.log
+npm-debug.log*
+.DS_Store
+
+# Workplans
+workplan-*.txt

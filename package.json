@@ -1,16 +1,37 @@
 {
-  "name": "terminalui",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "termix-cli",
+  "version": "1.1.0",
+  "description": "One screen for all your AI coding agents — run, monitor, and manage multiple CLI agents from a single browser tab",
+  "main": "server.js",
+  "bin": {
+    "termix": "bin/termix.js"
+  },
   "scripts": {
     "start": "node server.js",
-    "build:css": "tailwindcss -i src/input.css -o public/tailwind.css --minify"
+    "build:css": "tailwindcss -i src/input.css -o public/tailwind.css --minify",
+    "prepublishOnly": "npm run build:css"
   },
-  "keywords": [],
+  "keywords": [
+    "terminal",
+    "cli",
+    "ai",
+    "agent",
+    "claude",
+    "codex",
+    "gemini",
+    "opencode",
+    "dashboard",
+    "multiplexer",
+    "xterm"
+  ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rustykuntz/termix.git"
+  },
+  "homepage": "https://termix-a68d5bb0.mintlify.app/",
   "dependencies": {
     "node-pty": "^1.1.0",
     "ws": "^8.19.0",
@@ -19,5 +40,8 @@
   },
   "devDependencies": {
     "tailwindcss": "^3.4.19"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

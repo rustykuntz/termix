@@ -1,7 +1,8 @@
 const { readFileSync, writeFileSync, existsSync } = require('fs');
 const { join } = require('path');
+const { DATA_DIR } = require('./paths');
 
-const CONFIG_PATH = join(__dirname, 'config.json');
+const CONFIG_PATH = join(DATA_DIR, 'config.json');
 
 const DEFAULTS = {
   defaultPath: join(process.env.HOME || '/tmp', 'Documents'),

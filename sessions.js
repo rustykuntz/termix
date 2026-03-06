@@ -11,7 +11,8 @@ const THEMES = require('./themes');
 const MAX_BUFFER = 200 * 1024;
 const PORT = 4000;
 const PRESETS = JSON.parse(require('fs').readFileSync(join(__dirname, 'agent-presets.json'), 'utf8'));
-const SAVED_PATH = join(__dirname, 'sessions.json');
+const { DATA_DIR } = require('./paths');
+const SAVED_PATH = join(DATA_DIR, 'sessions.json');
 const sessions = new Map();
 const clients = new Set();
 

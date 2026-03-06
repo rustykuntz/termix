@@ -1,7 +1,8 @@
 const { appendFile, mkdirSync, existsSync, readdirSync, readFileSync } = require('fs');
 const { join, basename } = require('path');
+const { DATA_DIR } = require('./paths');
 
-const DIR = join(__dirname, 'data', 'transcripts');
+const DIR = join(DATA_DIR, 'transcripts');
 const ANSI_RE = /\x1b[\[\]()#;?]*[0-9;]*[a-zA-Z@`]|\x1b\].*?(?:\x07|\x1b\\)|\x1b.|\r|\x07/g;
 
 const inputBuf = {};

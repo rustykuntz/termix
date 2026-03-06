@@ -5,9 +5,6 @@ config.json
 sessions.json
 data/
 
-# Generated assets
-public/tailwind.css
-
 # Logs
 *.log
 npm-debug.log*

@@ -444,25 +444,22 @@ function setStatus(id, working) {
   const wasWorking = entry.working;
   entry.working = working;
 
-  // Notify on working → idle transition (skip if this session is in focus)
-  if (wasWorking && !working && !entry.muted && !(document.hasFocus() && state.active === id)) {
+  // Notify on working → idle transition
+  if (wasWorking && !working && !entry.muted) {
     const workDuration = (Date.now() - (entry.workStartedAt || 0)) / 1000;
     const minWork = state.cfg.notifyMinWork || 20;
     if (workDuration >= minWork) {
-      // Sound notification
-      if (state.cfg.notifySoundEnabled !== false) {
-        const sound = state.cfg.notifySound || 'default-beep';
-        new Audio(`/fx/${sound}.mp3`).play().catch(() => {});
+      // Sound: plays unless this session is the one you're looking at
+      if (state.cfg.notifySoundEnabled !== false && state.active !== id) {
+        new Audio(`/fx/${(state.cfg.notifySound || 'default-beep')}.mp3`).play().catch(() => {});
       }
-      // Browser notification (only when tab is not focused)
+      // Browser notification: plays when the Termix tab is not focused
       if (state.cfg.notifyIdle && !document.hasFocus()
           && 'Notification' in window && Notification.permission === 'granted') {
         const sessionName = document.querySelector(`.group[data-id="${id}"] .name`)?.textContent || 'Session';
         const proj = state.cfg.projects?.find(p => p.id === entry.projectId);
         const title = proj ? `${proj.name}: ${sessionName}` : sessionName;
-        const preview = entry.lastPreviewText || '';
-        const body = `Is now idle.\n${preview}`;
-        const n = new Notification(title, { body, icon: '/img/termix-logo-icon.png', tag: id });
+        const n = new Notification(title, { body: `Is now idle.\n${entry.lastPreviewText || ''}`, icon: '/img/termix-logo-icon.png', tag: id });
         n.onclick = () => { window.focus(); select(id); n.close(); };
       }
     }

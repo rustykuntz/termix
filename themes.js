@@ -234,9 +234,10 @@ const BUILT_IN = [
   },
 ];
 
-// Load user custom themes from custom-themes.json
+// Load user custom themes from ~/.termix/custom-themes.json
 function loadCustom() {
-  const p = join(__dirname, 'custom-themes.json');
+  const { DATA_DIR } = require('./paths');
+  const p = join(DATA_DIR, 'custom-themes.json');
   if (!existsSync(p)) return [];
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return []; }
 }
