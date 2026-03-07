@@ -1,9 +1,22 @@
-const { readdirSync, readFileSync, existsSync, mkdirSync } = require('fs');
+const { readdirSync, readFileSync, existsSync, mkdirSync, cpSync } = require('fs');
 const { join, sep } = require('path');
 const { DATA_DIR } = require('./paths');
 
 const PLUGINS_DIR = join(DATA_DIR, 'plugins');
 mkdirSync(PLUGINS_DIR, { recursive: true });
+
+// Seed bundled plugins on first run (copy if missing, never overwrite)
+const BUNDLED_DIR = join(__dirname, 'plugins');
+if (existsSync(BUNDLED_DIR)) {
+  for (const entry of readdirSync(BUNDLED_DIR, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const target = join(PLUGINS_DIR, entry.name);
+    if (!existsSync(target)) {
+      cpSync(join(BUNDLED_DIR, entry.name), target, { recursive: true });
+      console.log(`[plugin] seeded ${entry.name}`);
+    }
+  }
+}
 
 const plugins = new Map();
 const inputHooks = [];
