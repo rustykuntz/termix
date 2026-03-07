@@ -90,6 +90,7 @@ wss.on('connection', onConnection);
 
 const activity = require('./activity');
 activity.start(sessions.getSessions(), sessions.broadcast);
+sessions.startAutoSave(() => require('./handlers').getConfig());
 
 // Graceful shutdown: persist sessions before exit
 const { getConfig } = require('./handlers');

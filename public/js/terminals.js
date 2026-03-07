@@ -111,14 +111,25 @@ function closeMenu() {
   if (menuCleanup) menuCleanup();
 }
 
+function positionMenu(menu, anchorRect) {
+  menu.style.visibility = 'hidden';
+  document.body.appendChild(menu);
+  const mh = menu.offsetHeight;
+  const gap = 4;
+  const spaceBelow = window.innerHeight - anchorRect.bottom - gap;
+  menu.style.top = (spaceBelow >= mh
+    ? anchorRect.bottom + gap
+    : Math.max(gap, anchorRect.top - gap - mh)) + 'px';
+  menu.style.right = (window.innerWidth - anchorRect.right) + 'px';
+  menu.style.visibility = '';
+}
+
 function openMenu(sessionId, anchorEl) {
   closeMenu();
 
   const rect = anchorEl.getBoundingClientRect();
   const menu = document.createElement('div');
   menu.className = 'fixed z-[400] min-w-[160px] bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/40 py-1';
-  menu.style.top = (rect.bottom + 4) + 'px';
-  menu.style.right = (window.innerWidth - rect.right) + 'px';
 
   const entry = state.terms.get(sessionId);
   const projects = state.cfg.projects || [];
@@ -160,13 +171,17 @@ function openMenu(sessionId, anchorEl) {
       <span class="flex-shrink-0 text-slate-400"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 0 0 20 4 4 0 0 1 0-8 4 4 0 0 0 0-8"/></svg></span>
       Theme
     </button>
+    <button class="menu-action flex items-center gap-2.5 w-full px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors text-left" data-action="refresh">
+      <span class="flex-shrink-0 text-slate-400"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v5h4.5M20 20v-5h-4.5M4 9a9 9 0 0 1 15.36-5.36M20 15a9 9 0 0 1-15.36 5.36"/></svg></span>
+      Refresh session
+    </button>
     <button class="menu-action flex items-center gap-2.5 w-full px-3 py-2 text-sm text-red-400 hover:bg-slate-700 transition-colors text-left" data-action="delete">
       <span class="flex-shrink-0 text-red-400"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></span>
       Delete
     </button>`;
 
   menu.innerHTML = html;
-  document.body.appendChild(menu);
+  positionMenu(menu, rect);
 
   const onClick = (e) => {
     const btn = e.target.closest('.menu-action');
@@ -177,6 +192,9 @@ function openMenu(sessionId, anchorEl) {
       startRename(sessionId);
     } else if (action === 'mute') {
       toggleMute(sessionId);
+    } else if (action === 'refresh') {
+      const re = state.terms.get(sessionId);
+      if (re) send({ type: 'session.restart', id: sessionId, themeId: re.themeId, cols: re.term.cols, rows: re.term.rows });
     } else if (action === 'delete') {
       document.getElementById('session-list').dispatchEvent(
         new CustomEvent('session-delete', { detail: { id: sessionId } })
@@ -520,7 +538,7 @@ function updateMuteIndicator(id) {
 
 // --- Theme ---
 
-export function setSessionTheme(id, themeId) {
+export function setSessionTheme(id, themeId, { showBanner = true } = {}) {
   const entry = state.terms.get(id);
   if (!entry) return;
   const oldLight = isLightBg(entry.themeId);
@@ -529,7 +547,7 @@ export function setSessionTheme(id, themeId) {
   applyTheme(entry.term, themeId);
   entry.el.style.backgroundColor = resolveTheme(themeId).background;
   send({ type: 'session.theme', id, themeId });
-  if (oldLight !== newLight) showRestartBanner(id, themeId);
+  if (showBanner && oldLight !== newLight) showRestartBanner(id, themeId);
   else hideRestartBanner(id);
 }
 
@@ -862,4 +880,4 @@ setInterval(() => {
   }
 }, 60000);
 
-export { openMenu, closeMenu, setStatus, updateMuteIndicator, PROJECT_COLORS };
+export { openMenu, closeMenu, setStatus, updateMuteIndicator, positionMenu, PROJECT_COLORS };

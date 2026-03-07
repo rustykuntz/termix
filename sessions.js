@@ -318,7 +318,7 @@ function saveSessions(cfg) {
 
   writeFileSync(SAVED_PATH, JSON.stringify(data, null, 2));
   if (skippedNoToken > 0) console.warn(`Skipped ${skippedNoToken} resumable session(s): no session token captured`);
-  console.log(`Saved ${data.length} session(s) to ${SAVED_PATH} (${live.length} live, ${pending.length} pending)`);
+  return data.length;
 }
 
 function loadSessions() {
@@ -329,7 +329,26 @@ function loadSessions() {
   } catch { resumable = []; }
 }
 
+let autoSaveInterval = null;
+let getConfigFn = null;
+
+function startAutoSave(getConfig) {
+  getConfigFn = getConfig;
+  if (autoSaveInterval) return;
+  autoSaveInterval = setInterval(() => {
+    const cfg = getConfigFn?.();
+    if (!cfg) return;
+    try {
+      const count = saveSessions(cfg);
+      if (count > 0) broadcast({ type: 'sessions.saved' });
+    } catch (e) {
+      console.error('Auto-save failed:', e.message);
+    }
+  }, 30000);
+}
+
 function shutdown(cfg) {
+  clearInterval(autoSaveInterval);
   saveSessions(cfg);
   for (const [, s] of sessions) {
     try { s.pty.kill(); } catch {}
@@ -340,5 +359,5 @@ module.exports = {
   clients, broadcast, getSessions: () => sessions,
   create, resume, restart, input, resize, rename, setTheme, setMute, setProject, close,
   list, getResumable, sendBuffers,
-  loadSessions, shutdown,
+  loadSessions, startAutoSave, shutdown,
 };

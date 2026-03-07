@@ -1,6 +1,6 @@
 import { state, send } from './state.js';
 import { esc, binName } from './utils.js';
-import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updateMuteIndicator, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete } from './terminals.js';
+import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updateMuteIndicator, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete, positionMenu } from './terminals.js';
 import { renderSettings } from './settings.js';
 import { openCreator, closeCreator } from './creator.js';
 import { handleDirsResponse, openFolderPicker } from './folder-picker.js';
@@ -188,6 +188,9 @@ function connect() {
         }
         break;
       }
+      case 'sessions.saved':
+        flashSaveIndicator();
+        break;
       case 'plugins':
         loadPlugins(msg.list);
         break;
@@ -262,9 +265,43 @@ sessionList.addEventListener('session-delete', async (e) => {
 });
 
 // Mode toggle theme switch — dispatched from color-mode.js to avoid circular import
+let modeToastQueued = false;
 document.addEventListener('termix-theme-switch', (e) => {
-  setSessionTheme(e.detail.id, e.detail.themeId);
+  setSessionTheme(e.detail.id, e.detail.themeId, { showBanner: false });
+  if (!modeToastQueued) {
+    modeToastQueued = true;
+    queueMicrotask(() => {
+      modeToastQueued = false;
+      showModeToast();
+    });
+  }
 });
+
+function showModeToast() {
+  document.getElementById('mode-toast')?.remove();
+  const toast = document.createElement('div');
+  toast.id = 'mode-toast';
+  toast.className = 'fixed bottom-5 right-5 z-[500] w-[360px] bg-slate-800/95 backdrop-blur-sm border border-slate-700/60 rounded-xl shadow-2xl shadow-black/60';
+  toast.style.opacity = '0';
+  toast.style.transform = 'translateY(12px)';
+  toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+  toast.innerHTML = `
+    <div class="flex items-start gap-2.5 px-4 py-3.5">
+      <svg class="w-5 h-5 flex-shrink-0 text-amber-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>
+      <p class="flex-1 text-xs text-slate-300 leading-relaxed">If a terminal looks off, right-click the session and choose <strong class="text-slate-200">Refresh session</strong>.</p>
+      <button class="dismiss-btn flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>`;
+  toast.querySelector('.dismiss-btn').onclick = () => toast.remove();
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; });
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(12px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
 
 document.getElementById('btn-new').addEventListener('click', openCreator);
 document.getElementById('btn-new-project').addEventListener('click', () => {
@@ -362,8 +399,6 @@ function openProjectMenu(projectId, anchorEl) {
   const rect = anchorEl.getBoundingClientRect();
   const menu = document.createElement('div');
   menu.className = 'fixed z-[400] min-w-[160px] bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/40 py-1';
-  menu.style.top = (rect.bottom + 4) + 'px';
-  menu.style.right = (window.innerWidth - rect.right) + 'px';
   menu.innerHTML = `
     <div class="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600">Color</div>
     <div class="px-3 pb-2 flex gap-1.5">
@@ -380,7 +415,7 @@ function openProjectMenu(projectId, anchorEl) {
       <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
       Delete project
     </button>`;
-  document.body.appendChild(menu);
+  positionMenu(menu, rect);
   const onClick = (e) => {
     // Color pick
     const colorBtn = e.target.closest('.color-pick');
@@ -540,6 +575,15 @@ function addPluginToolbarButton(pluginId, opts) {
   return btn;
 }
 
+function getPluginExpanded() {
+  try { return JSON.parse(localStorage.getItem('termix.pluginsExpanded') || '{}'); } catch { return {}; }
+}
+function setPluginExpanded(id, open) {
+  const map = getPluginExpanded();
+  if (open) map[id] = true; else delete map[id];
+  localStorage.setItem('termix.pluginsExpanded', JSON.stringify(map));
+}
+
 function renderPluginsPanel(list) {
   const container = document.getElementById('plugins-list');
   if (!list.length) {
@@ -549,14 +593,35 @@ function renderPluginsPanel(list) {
     </div>`;
     return;
   }
-  container.innerHTML = list.map(p => `
-    <div class="plugin-card px-4 py-3 ${list.indexOf(p) > 0 ? 'border-t border-slate-700/30' : ''}">
-      <div class="flex items-center gap-2 mb-1">
-        <span class="text-sm font-medium text-slate-200">${esc(p.name)}</span>
-        <span class="text-[10px] text-slate-600">v${esc(p.version)}</span>
+  const expanded = getPluginExpanded();
+  container.innerHTML = list.map((p, i) => {
+    const open = !!expanded[p.id];
+    return `
+    <div class="plugin-card ${i > 0 ? 'border-t border-slate-700/50' : ''}">
+      <button class="plugin-toggle w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-slate-800/50 transition-colors" data-plugin-id="${esc(p.id)}">
+        <span class="flex-1 text-sm font-medium text-slate-200">${esc(p.name)}</span>
+        <span class="text-[10px] text-slate-500">v${esc(p.version)}</span>
+        <svg class="plugin-chevron w-4 h-4 text-slate-500 transition-transform duration-200 ${open ? '' : 'collapsed'}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div class="plugin-body ${open ? '' : 'hidden'}">
+        <div class="px-4 pb-3">
+          ${(p.settings || []).map(s => renderSettingField(p.id, s, p.settingValues[s.key] ?? s.default)).join('')}
+        </div>
       </div>
-      ${(p.settings || []).map(s => renderSettingField(p.id, s, p.settingValues[s.key] ?? s.default)).join('')}
-    </div>`).join('');
+    </div>`;
+  }).join('');
+
+  container.querySelectorAll('.plugin-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.pluginId;
+      const body = btn.nextElementSibling;
+      if (!body) return;
+      const chevron = btn.querySelector('.plugin-chevron');
+      const nowHidden = body.classList.toggle('hidden');
+      chevron.classList.toggle('collapsed', nowHidden);
+      setPluginExpanded(id, !nowHidden);
+    });
+  });
 
   container.querySelectorAll('[data-setting]').forEach(el => {
     const pluginId = el.dataset.plugin;
@@ -650,6 +715,20 @@ async function loadPlugins(list) {
       }
     } catch (e) { console.error(`[plugin:${plugin.id}] client load failed:`, e); }
   }
+}
+
+let saveTimer = null;
+function flashSaveIndicator() {
+  const el = document.getElementById('save-indicator');
+  if (!el) return;
+  clearTimeout(saveTimer);
+  el.classList.add('saving');
+  el.classList.remove('saved');
+  saveTimer = setTimeout(() => {
+    el.classList.remove('saving');
+    el.classList.add('saved');
+    saveTimer = setTimeout(() => el.classList.remove('saved'), 4000);
+  }, 1500);
 }
 
 function initSessionScrollbarVisibility() {

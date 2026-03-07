@@ -35,6 +35,7 @@ Open [http://localhost:4000](http://localhost:4000). Click **+**, launch agents,
 - **Session resume** — shut down, come back later, pick up where you left off
 - **Projects** — group sessions by project with drag-and-drop
 - **Search** — find sessions by name or transcript content
+- **Plugins** — extend Termix with plugins. Ships with Trim Clip and Voice Input. Build your own to create a unique workflow.
 - **15 themes** — dark and light, plus custom theme support
 - **Zero interference** — real PTY terminals, nothing between you and the agent
 

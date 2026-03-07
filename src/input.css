@@ -241,7 +241,8 @@ html { transition: color 0.3s ease, background-color 0.3s ease; }
 
 /* Terminal wrappers — need absolute positioning for stacking */
 .term-wrap {
-  @apply absolute inset-1 overflow-hidden invisible;
+  @apply absolute overflow-hidden invisible;
+  top: 4px; left: 4px; right: 4px; bottom: 0;
 }
 .term-wrap.active {
   @apply visible;
@@ -252,6 +253,42 @@ html { transition: color 0.3s ease, background-color 0.3s ease; }
   height: 100%;
 }
 
+/* ── Save indicator ── */
+
+.save-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--color-search-text);
+  margin-right: 4px;
+  opacity: 0.35;
+  transition: opacity 0.4s ease;
+}
+
+.save-indicator.saved { opacity: 0.5; }
+
+.save-indicator .save-tick {
+  color: var(--color-time-recent);
+  display: block;
+}
+
+.save-indicator .save-spin {
+  display: none;
+  color: var(--color-dim);
+  animation: save-rotate 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.save-indicator.saving .save-tick { display: none; }
+.save-indicator.saving .save-spin { display: block; }
+.save-indicator.saving { opacity: 0.5; }
+
+@keyframes save-rotate {
+  to { transform: rotate(360deg); }
+}
+
 /* Drag & drop */
 .drop-highlight {
   @apply bg-blue-500/10 ring-1 ring-blue-500/30 rounded;
@@ -259,6 +296,11 @@ html { transition: color 0.3s ease, background-color 0.3s ease; }
 
 /* Project chevron rotation — down by default, right when collapsed */
 .project-chevron.collapsed svg {
+  transform: rotate(-90deg);
+}
+
+/* Plugin chevron rotation — down when expanded, right when collapsed */
+.plugin-chevron.collapsed {
   transform: rotate(-90deg);
 }
 
