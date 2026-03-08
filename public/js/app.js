@@ -10,6 +10,7 @@ import { toggleMode, applyMode } from './color-mode.js';
 import { showToast } from './toast.js';
 import './nav.js';
 import { initDrag } from './drag.js';
+import { registerHotkey, unregisterHotkey } from './hotkeys.js';
 
 function connect() {
   state.ws = new WebSocket(`ws://${location.host}`);
@@ -751,6 +752,8 @@ async function loadPlugins(list) {
           getTerminalSelection() { const e = state.terms.get(state.active); return e ? e.term.getSelection() : ''; },
           writeToSession(id, text) { send({ type: 'input', id, data: text }); },
           toast(message, opts) { return showToast(message, opts); },
+          registerHotkey(combo, callback) { return registerHotkey(plugin.id, combo, callback); },
+          unregisterHotkey(combo) { unregisterHotkey(plugin.id, combo); },
         });
       }
     } catch (e) { console.error(`[plugin:${plugin.id}] client load failed:`, e); }

@@ -1,6 +1,7 @@
 import { state, send } from './state.js';
 import { esc } from './utils.js';
 import { resolveTheme, resolveAccent, applyTheme } from './profiles.js';
+import { attachToTerminal } from './hotkeys.js';
 function isLightBg(themeId) {
   const bg = resolveTheme(themeId)?.background;
   if (!bg || bg[0] !== '#') return false;
@@ -334,6 +335,7 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted) {
   term.onData(data => send({ type: 'input', id, data }));
 
   term.open(el);
+  attachToTerminal(term);
   let fitted = false, pending = [];
   const ro = new ResizeObserver(() => {
     if (!el.offsetWidth) return;

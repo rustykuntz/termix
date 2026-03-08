@@ -118,37 +118,46 @@ function cancelRecording() {
 
 // --- Hotkey ---
 
-function onKeyDown(e) {
-  if (!settings.enabled) return;
-  const inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable;
-  if (inInput && !e.key.startsWith('F')) return;
+let currentHotkey = null;
 
+function bindHotkey() {
+  const code = settings.hotkey || 'F4';
+  if (code === currentHotkey) return;
+  const cb = () => {
+    if (!settings.enabled) return;
+    if (!recordingState) startRecording();
+    else stopRecording();
+  };
+  const prev = currentHotkey;
+  if (prev) _api.unregisterHotkey(prev);
+  if (_api.registerHotkey(code, cb)) {
+    currentHotkey = code;
+  } else if (prev) {
+    _api.registerHotkey(prev, cb);
+    toast(`Hotkey "${code}" is taken, keeping "${prev}"`, 'warn');
+  } else {
+    toast(`Hotkey "${code}" is unavailable`, 'warn');
+  }
+}
+
+// Escape to cancel recording — handled separately since it's conditional
+document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && recordingState) {
     e.preventDefault();
     e.stopPropagation();
     cancelRecording();
-    return;
   }
-
-  const hotkey = (settings.hotkey || 'F4').trim();
-  if (e.key === hotkey) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!recordingState) startRecording();
-    else stopRecording();
-  }
-}
+}, true);
 
 // --- Init ---
 
 export function init(api) {
   _api = api;
 
-  document.addEventListener('keydown', onKeyDown, true);
-
   api.onMessage('settings', msg => {
     settings = { ...settings, ...msg };
     if (btnEl) btnEl.style.display = settings.enabled ? '' : 'none';
+    bindHotkey();
   });
 
   api.onMessage('status', msg => {
@@ -183,4 +192,5 @@ export function init(api) {
 
   btnEl.addEventListener('mousedown', e => e.preventDefault());
   if (!settings.enabled && btnEl) btnEl.style.display = 'none';
+  bindHotkey();
 }
