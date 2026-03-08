@@ -445,14 +445,21 @@ function readLineText(buf, y) {
   return text.trimEnd();
 }
 
+// Platform-specific marker alternatives.
+// Claude Code uses ⏺ (U+23FA) on Mac but ● (U+25CF) on Windows.
+const MARKER_ALTS = { '\u23FA': ['\u23FA', '\u25CF'] };
+
 function readLastAgentLine(term, commandId) {
   const marker = state.cfg.commands.find(c => c.id === commandId)?.outputMarker;
   if (!marker) return '';
+  const markers = MARKER_ALTS[marker] || [marker];
   const buf = term.buffer.active;
   for (let y = buf.baseY + buf.cursorY; y >= 0; y--) {
     const text = readLineText(buf, y).trim();
-    if (!text || !text.startsWith(marker)) continue;
-    const content = text.slice(marker.length).trim();
+    if (!text) continue;
+    const match = markers.find(m => text.startsWith(m));
+    if (!match) continue;
+    const content = text.slice(match.length).trim();
     if (content) return content;
   }
   return '';
