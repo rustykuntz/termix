@@ -725,8 +725,11 @@ export function regroupSessions() {
   if (ungroupedResumable.length) {
     const section = document.createElement('div');
     section.id = 'resumable-section';
-    section.innerHTML = `<div class="resumable-header px-2.5 py-2 mt-1 border-t border-slate-700/50">
-      <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-600">Previous Sessions</span>
+    section.innerHTML = `<div class="resumable-header group flex items-center gap-1.5 px-2.5 py-2 mt-1 border-t border-slate-700/50">
+      <span class="flex-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600">Previous Sessions</span>
+      <button class="prev-sessions-menu-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-slate-400 flex-shrink-0 transition-opacity p-0.5" title="Previous sessions menu">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 20 20"><circle cx="10" cy="4" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="16" r="1.5" fill="currentColor"/></svg>
+      </button>
     </div>`;
     for (const row of ungroupedResumable) section.appendChild(row);
     list.appendChild(section);

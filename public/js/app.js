@@ -224,6 +224,12 @@ sessionList.addEventListener('click', (e) => {
     return;
   }
 
+  // Previous sessions menu button
+  if (e.target.closest('.prev-sessions-menu-btn')) {
+    openPrevSessionsMenu(e.target.closest('.prev-sessions-menu-btn'));
+    return;
+  }
+
   // Resumable session click
   const resumableRow = e.target.closest('[data-resumable-id]');
   if (resumableRow) {
@@ -380,6 +386,10 @@ function openProjectMenu(projectId, anchorEl) {
   const rect = anchorEl.getBoundingClientRect();
   const menu = document.createElement('div');
   menu.className = 'fixed z-[400] min-w-[160px] bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/40 py-1';
+  // Count dormant (resumable) sessions in this project
+  const dormantIds = state.resumable.filter(s => s.projectId === projectId).map(s => s.id);
+  const hasDormant = dormantIds.length > 0;
+
   menu.innerHTML = `
     <div class="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600">Color</div>
     <div class="px-3 pb-2 flex gap-1.5">
@@ -391,6 +401,10 @@ function openProjectMenu(projectId, anchorEl) {
     <button class="pm-action flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors text-left" data-action="rename">
       <svg class="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
       Rename
+    </button>
+    <button class="pm-action flex items-center gap-2 w-full px-3 py-2 text-sm ${hasDormant ? 'text-slate-300 hover:bg-slate-700 cursor-pointer' : 'text-slate-600 cursor-default'} transition-colors text-left" data-action="clear-dormant" ${hasDormant ? '' : 'disabled'}>
+      <svg class="w-4 h-4 flex-shrink-0 ${hasDormant ? 'text-slate-400' : 'text-slate-600'}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+      Clear dormant sessions
     </button>
     <button class="pm-action flex items-center gap-2 w-full px-3 py-2 text-sm text-red-400 hover:bg-slate-700 transition-colors text-left" data-action="delete">
       <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
@@ -414,6 +428,14 @@ function openProjectMenu(projectId, anchorEl) {
       startProjectRename(projectId);
       return;
     }
+    if (btn.dataset.action === 'clear-dormant') {
+      const ids = state.resumable.filter(s => s.projectId === projectId).map(s => s.id);
+      if (!ids.length) return;
+      confirmClose(`Clear ${ids.length} dormant session${ids.length > 1 ? 's' : ''} from "${proj?.name}"?`, 'Clear').then(ok => {
+        if (ok) for (const id of ids) send({ type: 'close', id });
+      });
+      return;
+    }
     if (btn.dataset.action === 'delete') {
       const count = [...state.terms.values()].filter(e => e.projectId === projectId).length;
       const msg = count
@@ -432,6 +454,41 @@ function openProjectMenu(projectId, anchorEl) {
     document.removeEventListener('click', onOutside);
     menu.remove();
     projectMenuCleanup = null;
+  };
+}
+
+// --- Previous Sessions menu ---
+let prevMenuCleanup = null;
+function openPrevSessionsMenu(anchorEl) {
+  if (prevMenuCleanup) prevMenuCleanup();
+  const rect = anchorEl.getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.className = 'fixed z-[400] min-w-[160px] bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/40 py-1';
+
+  const dormantIds = state.resumable.filter(s => !s.projectId).map(s => s.id);
+
+  menu.innerHTML = `
+    <button class="pv-action flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors text-left" data-action="clear-dormant">
+      <svg class="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+      Clear dormant sessions
+    </button>`;
+  positionMenu(menu, rect);
+  const onClick = (e) => {
+    const btn = e.target.closest('.pv-action');
+    if (!btn) return;
+    if (prevMenuCleanup) prevMenuCleanup();
+    confirmClose(`Clear ${dormantIds.length} dormant session${dormantIds.length > 1 ? 's' : ''}?`, 'Clear').then(ok => {
+      if (ok) for (const id of dormantIds) send({ type: 'close', id });
+    });
+  };
+  const onOutside = (e) => { if (!menu.contains(e.target)) { if (prevMenuCleanup) prevMenuCleanup(); } };
+  menu.addEventListener('click', onClick);
+  requestAnimationFrame(() => document.addEventListener('click', onOutside));
+  prevMenuCleanup = () => {
+    menu.removeEventListener('click', onClick);
+    document.removeEventListener('click', onOutside);
+    menu.remove();
+    prevMenuCleanup = null;
   };
 }
 
