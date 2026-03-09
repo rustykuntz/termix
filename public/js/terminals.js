@@ -284,7 +284,7 @@ export function estimateSize() {
 
 // --- Terminal management ---
 
-export function addTerminal(id, name, themeId, commandId, projectId, muted) {
+export function addTerminal(id, name, themeId, commandId, projectId, muted, lastPreview) {
   if (state.terms.has(id)) return;
   themeId = themeId || state.cfg.defaultTheme || 'default';
 
@@ -309,6 +309,9 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted) {
         </button>
       </div>
     </div>`;
+
+  // Show saved preview from last session if available (survives reconnect/sleep)
+  if (lastPreview) item.querySelector('.session-preview').textContent = lastPreview;
 
   document.getElementById('session-list').appendChild(item);
   const statusEl = item.querySelector('.session-status');
@@ -351,7 +354,7 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted) {
   ro.observe(el);
   // Safety: if RO hasn't fired within 500ms, flush anyway to avoid unbounded queue
   setTimeout(() => { if (!fitted) { fitted = true; for (const chunk of pending) term.write(chunk); pending = null; updatePreview(id); } }, 500);
-  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, muted: !!muted, working: !hasBridge, workStartedAt: hasBridge ? null : Date.now(), stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: '', searchText: '' });
+  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, muted: !!muted, working: !hasBridge, workStartedAt: hasBridge ? null : Date.now(), stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '' });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';
   if (muted) requestAnimationFrame(() => updateMuteIndicator(id));
@@ -428,6 +431,8 @@ export function updatePreview(id) {
     el.textContent = last;
     entry.lastPreviewText = last;
     entry.lastActivityAt = Date.now();
+    // Persist preview on server — picked up by 30s auto-save
+    send({ type: 'session.setPreview', id, text: last, timestamp: new Date().toISOString() });
   }
   const timeEl = document.querySelector(`.group[data-id="${id}"] .session-time`);
   if (timeEl) updateTimeEl(timeEl, entry.lastActivityAt);
@@ -799,7 +804,7 @@ function buildResumableRow(s) {
         <span class="text-[11px] text-slate-600 flex-shrink-0">${time}</span>
       </div>
       <div class="flex items-center gap-1 mt-0.5">
-        <span class="flex-1 text-xs text-slate-600 truncate">${esc(label)}${path ? ' · ' + esc(path) : ''}</span>
+        <span class="flex-1 text-xs text-slate-600 truncate">${s.lastPreview ? esc(s.lastPreview) : esc(label) + (path ? ' · ' + esc(path) : '')}</span>
         <button class="resume-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-emerald-400 flex-shrink-0 transition-all flex items-center gap-0.5 text-[11px] font-medium" title="Resume session">
           Resume${RESUME_SVG}
         </button>

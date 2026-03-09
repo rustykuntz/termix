@@ -46,11 +46,11 @@ function connect() {
         renderResumable();
         break;
       case 'sessions':
-        msg.list.forEach(s => addTerminal(s.id, s.name, s.themeId, s.commandId, s.projectId, s.muted));
+        msg.list.forEach(s => addTerminal(s.id, s.name, s.themeId, s.commandId, s.projectId, s.muted, s.lastPreview));
         if (msg.list.length) select(msg.list[0].id);
         break;
       case 'created':
-        if (!state.terms.has(msg.id)) addTerminal(msg.id, msg.name, msg.themeId, msg.commandId, msg.projectId, msg.muted);
+        if (!state.terms.has(msg.id)) addTerminal(msg.id, msg.name, msg.themeId, msg.commandId, msg.projectId, msg.muted, msg.lastPreview);
         select(msg.id);
         applyFilter();
         break;
@@ -80,6 +80,8 @@ function connect() {
           pe.lastActivityAt = Date.now();
           const el = document.querySelector(`.group[data-id="${msg.id}"] .session-preview`);
           if (el) el.textContent = msg.text;
+          // Persist bridge preview on server — picked up by 30s auto-save
+          send({ type: 'session.setPreview', id: msg.id, text: msg.text, timestamp: new Date().toISOString() });
         }
         break;
       }

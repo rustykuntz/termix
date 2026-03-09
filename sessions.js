@@ -184,7 +184,7 @@ function resume(msg, ws, cfg) {
   resumable = resumable.filter(s => s.id !== id);
   broadcast({ type: 'sessions.resumable', list: resumable });
 
-  broadcast({ type: 'created', id, name: saved.name, themeId: saved.themeId || saved.profileId || 'default', commandId: saved.commandId, projectId: saved.projectId || null, muted: !!saved.muted, resumed: true });
+  broadcast({ type: 'created', id, name: saved.name, themeId: saved.themeId || saved.profileId || 'default', commandId: saved.commandId, projectId: saved.projectId || null, muted: !!saved.muted, resumed: true, lastPreview: saved.lastPreview || '' });
 }
 
 // --- Standard session operations ---
@@ -272,7 +272,18 @@ function restart(msg, ws, cfg) {
 function list() {
   return [...sessions].map(([id, s]) => ({
     id, name: s.name, themeId: s.themeId, commandId: s.commandId, projectId: s.projectId, muted: !!s.muted,
+    // Last preview text for sidebar display on reconnect
+    lastPreview: s.lastPreview || '', lastActivityAt: s.lastActivityAt || null,
   }));
+}
+
+// Store the latest preview text from the client (persisted by auto-save)
+function setPreview(id, text, timestamp) {
+  const s = sessions.get(id);
+  if (!s) return false;
+  s.lastPreview = (text || '').slice(0, 200);
+  s.lastActivityAt = timestamp || new Date().toISOString();
+  return true;
 }
 
 function setProject(id, projectId) {
@@ -308,6 +319,7 @@ function saveSessions(cfg) {
     .map(([id, s]) => ({
       id, name: s.name, commandId: s.commandId, cwd: s.cwd,
       themeId: s.themeId, sessionToken: s.sessionToken, projectId: s.projectId, muted: !!s.muted,
+      lastPreview: s.lastPreview || '', lastActivityAt: s.lastActivityAt || null,
       savedAt: new Date().toISOString(),
     }));
 
@@ -357,7 +369,7 @@ function shutdown(cfg) {
 
 module.exports = {
   clients, broadcast, getSessions: () => sessions,
-  create, resume, restart, input, resize, rename, setTheme, setMute, setProject, close,
+  create, resume, restart, input, resize, rename, setTheme, setMute, setProject, setPreview, close,
   list, getResumable, sendBuffers,
   loadSessions, startAutoSave, shutdown,
 };

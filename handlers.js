@@ -157,6 +157,11 @@ function onConnection(ws) {
         break;
       }
 
+      // Client reports latest preview text — stored in memory, persisted by auto-save
+      case 'session.setPreview':
+        sessions.setPreview(msg.id, msg.text, msg.timestamp);
+        break;
+
       case 'project.delete': {
         const proj = cfg.projects?.find(p => p.id === msg.id);
         if (!proj) break;
