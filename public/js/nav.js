@@ -1,6 +1,7 @@
 import { closeThemeMenu } from './settings.js';
 
 const ALL_PANELS = ['chats', 'prompts', 'plugins', 'settings'];
+const PANEL_TITLES = { chats: 'Sessions', prompts: 'Prompts', plugins: 'Plugins', settings: 'Settings' };
 const ACTIVE = ['text-slate-200', 'bg-slate-800'];
 const INACTIVE = ['text-slate-500', 'hover:text-slate-300', 'hover:bg-slate-800/50'];
 
@@ -26,6 +27,7 @@ function showSettings() {
   document.getElementById('settings-overlay').classList.remove('hidden');
   document.getElementById('btn-new').classList.add('opacity-30', 'pointer-events-none');
   setRailActive('settings');
+  document.title = 'Termix — Settings';
 }
 
 function hideSettings() {
@@ -41,6 +43,7 @@ export function switchPanel(panelId) {
   const el = document.getElementById(`panel-${panelId}`);
   if (el) { el.classList.remove('hidden'); el.classList.add('flex'); }
   setRailActive(panelId);
+  document.title = 'Termix — ' + (PANEL_TITLES[panelId] || 'Termix');
 }
 
 document.getElementById('nav-rail').addEventListener('click', (e) => {
