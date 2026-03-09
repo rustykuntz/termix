@@ -31,6 +31,7 @@ npx termix-cli
 - **Message previews** — latest output from each agent, right in the sidebar
 - **Projects** — group sessions by project with drag-and-drop
 - **Search** — find any session by name or scroll back through transcript content
+- **Prompt Library** — save reusable prompts and paste them into any terminal by typing `//`
 - **Plugins** — ships with Voice Input and Trim Clip. Build your own with the plugin API
 - **15 themes** — dark and light built-in, plus custom theme support
 - **Zero interference** — native PTY terminals, your keystrokes go straight to the agent, nothing in between
@@ -54,6 +55,12 @@ Claude Code works out of the box. Other agents need a one-time configuration tha
 Each agent runs in a native terminal (PTY). Termix receives lightweight status signals from agents via OpenTelemetry — it sees *that* an agent is working, not *what* it's working on. Your prompts and responses are never read or stored by Termix.
 
 OpenTelemetry runs locally between the agent and Termix. No data is collected, transmitted, or stored outside your machine.
+
+## Prompt Library
+
+Save prompts you use often and paste them into any terminal session instantly. Open the Prompts panel from the sidebar, click **+** to add a prompt with a name and text.
+
+To use a prompt, type `//` in any terminal — an autocomplete dropdown appears. Type a few letters to filter, arrow keys to navigate, Enter to paste. The prompt text is sent directly to the active terminal.
 
 ## Platform Support
 
