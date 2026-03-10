@@ -296,7 +296,10 @@ function showModeToast() {
   });
 }
 
-document.getElementById('btn-new').addEventListener('click', openCreator);
+document.getElementById('btn-new').addEventListener('click', () => {
+  send({ type: 'checkAvailability' });
+  openCreator();
+});
 document.getElementById('btn-new-project').addEventListener('click', () => {
   closeCreator();
   openProjectCreator();

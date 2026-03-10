@@ -77,8 +77,6 @@ export function openCreator() {
   // Close project creator if open
   document.getElementById('project-creator')?.remove();
   if (!state.presets.length) return;
-  // Recheck binary availability on the server
-  send({ type: 'checkAvailability' });
 
   const fallbackName = randomName();
   const presets = sortedPresets();
