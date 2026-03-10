@@ -70,7 +70,7 @@ Tested on **macOS** and **Windows**. Works in any modern browser. Linux: unteste
 
 Full setup guides, agent configuration, and plugin development:
 
-**[Documentation](https://clideck.dev/)**
+**[Documentation](https://docs.clideck.dev/)**
 
 ## License
 

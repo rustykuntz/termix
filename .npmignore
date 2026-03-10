@@ -9,6 +9,7 @@ data/
 
 # Dev / repo files
 .claude/
+.clideck/
 .git/
 .gitignore
 *.log
