@@ -77,6 +77,12 @@ export function unregisterHotkey(pluginId, combo) {
   if (entry && entry.pluginId === pluginId) registry.delete(norm);
 }
 
+export function unregisterAllForPlugin(pluginId) {
+  for (const [combo, entry] of registry) {
+    if (entry.pluginId === pluginId) registry.delete(combo);
+  }
+}
+
 // Attach to an xterm terminal instance — xterm's hidden textarea is an input,
 // so we bypass the isInput check and dispatch directly.
 // Prompt autocomplete (// trigger) runs first, then hotkey dispatch.

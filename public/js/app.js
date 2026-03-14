@@ -10,7 +10,7 @@ import { toggleMode, applyMode } from './color-mode.js';
 import { showToast } from './toast.js';
 import './nav.js';
 import { initDrag } from './drag.js';
-import { registerHotkey, unregisterHotkey } from './hotkeys.js';
+import { registerHotkey, unregisterHotkey, unregisterAllForPlugin } from './hotkeys.js';
 import { renderPrompts } from './prompts.js';
 
 function connect() {
@@ -202,6 +202,9 @@ function connect() {
         break;
       case 'plugins':
         loadPlugins(msg.list);
+        break;
+      case 'plugin.delete.error':
+        showToast(`Failed to remove plugin: ${msg.error}`, { duration: 4000 });
         break;
       case 'remote.status':
         handleRemoteStatus(msg);
@@ -696,19 +699,23 @@ function renderPluginsPanel(list) {
     return;
   }
   const expanded = getPluginExpanded();
+  const trashSvg = `<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>`;
+
   container.innerHTML = list.map((p, i) => {
     const open = !!expanded[p.id];
+    const deleteBtn = p.bundled ? '' : `<div class="plugin-delete flex items-center justify-center w-6 h-6 rounded text-slate-600 hover:text-red-400 hover:bg-slate-700/50 cursor-pointer transition-colors flex-shrink-0" data-plugin-id="${esc(p.id)}" data-plugin-name="${esc(p.name)}" title="Remove plugin">${trashSvg}</div>`;
+    const hasFooter = p.author || !p.bundled;
     return `
     <div class="plugin-card ${i > 0 ? 'border-t border-slate-700/50' : ''}">
-      <button class="plugin-toggle w-full px-4 py-3 text-left hover:bg-slate-800/50 transition-colors" data-plugin-id="${esc(p.id)}">
+      <div class="plugin-toggle px-4 py-3 hover:bg-slate-800/50 transition-colors cursor-pointer" data-plugin-id="${esc(p.id)}">
         <div class="flex items-center gap-2">
-          <span class="flex-1 text-sm font-medium text-slate-200">${esc(p.name)}</span>
-          <span class="text-[10px] text-slate-500">v${esc(p.version)}</span>
+          <span class="flex-1 text-sm font-medium text-slate-200 truncate">${esc(p.name)}</span>
+          <span class="text-[10px] text-slate-500 flex-shrink-0">v${esc(p.version)}</span>
           <svg class="plugin-chevron w-4 h-4 text-slate-500 transition-transform duration-200 flex-shrink-0 ${open ? '' : 'collapsed'}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>
         </div>
         ${p.description ? `<p class="text-[11px] text-slate-500 mt-0.5 leading-snug">${esc(p.description)}</p>` : ''}
-        ${p.author ? `<p class="text-[10px] text-slate-600 mt-0.5" style="text-align:right">${esc(p.author)}</p>` : ''}
-      </button>
+        ${hasFooter ? `<div class="flex items-center justify-end gap-2 mt-1">${p.author ? `<span class="text-[10px] text-slate-600">${esc(p.author)}</span>` : ''}${deleteBtn}</div>` : ''}
+      </div>
       <div class="plugin-body ${open ? '' : 'hidden'}">
         <div class="px-4 pb-3">
           ${(p.settings || []).map(s => renderSettingField(p.id, s, p.settingValues[s.key] ?? s.default)).join('')}
@@ -717,15 +724,26 @@ function renderPluginsPanel(list) {
     </div>`;
   }).join('');
 
-  container.querySelectorAll('.plugin-toggle').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.pluginId;
-      const body = btn.nextElementSibling;
+  container.querySelectorAll('.plugin-toggle').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.plugin-delete')) return;
+      const id = el.dataset.pluginId;
+      const card = el.closest('.plugin-card');
+      const body = card.querySelector('.plugin-body');
+      const chevron = card.querySelector('.plugin-chevron');
       if (!body) return;
-      const chevron = btn.querySelector('.plugin-chevron');
       const nowHidden = body.classList.toggle('hidden');
       chevron.classList.toggle('collapsed', nowHidden);
       setPluginExpanded(id, !nowHidden);
+    });
+  });
+
+  container.querySelectorAll('.plugin-delete').forEach(el => {
+    el.addEventListener('click', async () => {
+      const pluginId = el.dataset.pluginId;
+      const name = el.dataset.pluginName;
+      const ok = await confirmClose(`Remove plugin "${name}"? Its folder will be permanently deleted.`, 'Remove');
+      if (ok) send({ type: 'plugin.delete', pluginId });
     });
   });
 
@@ -782,10 +800,26 @@ function renderSettingField(pluginId, setting, value) {
 }
 
 async function loadPlugins(list) {
+  const activeIds = new Set(list.map(p => p.id));
+
+  // Clean up removed plugins: hotkeys, toolbar buttons, message handlers
+  for (const id of loadedPlugins) {
+    if (!activeIds.has(id)) {
+      unregisterAllForPlugin(id);
+      for (const [key] of pluginMessageHandlers) {
+        if (key.startsWith(`plugin.${id}.`)) pluginMessageHandlers.delete(key);
+      }
+      loadedPlugins.delete(id);
+    }
+  }
+
   renderPluginsPanel(list);
 
-  // Render server-registered toolbar actions
+  // Render server-registered toolbar actions — also clears stale client toolbar buttons
   const toolbar = document.getElementById('plugin-toolbar');
+  toolbar.querySelectorAll('.plugin-btn').forEach(b => {
+    if (!activeIds.has(b.dataset.pluginId)) b.remove();
+  });
   toolbar.querySelectorAll('.plugin-btn[data-server]').forEach(b => b.remove());
   for (const plugin of list) {
     for (const action of plugin.actions || []) {

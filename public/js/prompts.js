@@ -20,40 +20,51 @@ export function renderPrompts() {
       <button id="btn-add-prompt" class="icon-btn w-7 h-7 flex items-center justify-center rounded-md border border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-slate-200 transition-colors text-sm" title="New prompt">+</button>
     </div>
     <div class="px-3 pb-2.5">
-      <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/40 text-slate-600 text-[11px]">
-        <kbd class="px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-400 font-mono text-[10px]">//</kbd>
-        <span>Type in terminal to search &amp; paste</span>
+      <div id="prompts-hint" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/40 text-slate-600 text-[11px] cursor-text">
+        <kbd class="prompts-hint-kbd px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-400 font-mono text-[10px]">//</kbd>
+        <span class="prompts-hint-label flex-1">Type in terminal to search &amp; paste</span>
+        <input id="prompts-search" type="text" placeholder="Filter prompts…" class="hidden flex-1 bg-transparent text-slate-300 text-[11px] outline-none placeholder-slate-600">
       </div>
     </div>
     <div id="prompts-list" class="tmx-scroll flex-1 overflow-y-auto border-t border-slate-700/50"></div>`;
 
-  const list = panel.querySelector('#prompts-list');
-  if (!prompts.length) {
-    list.innerHTML = `<div class="flex flex-col items-center justify-center h-full px-6 text-center">
-      <p class="text-sm text-slate-400 mb-1">No prompts saved</p>
-      <p class="text-xs text-slate-600 leading-relaxed">Add prompts and paste them into any terminal<br>by typing <kbd class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px] font-mono">//</kbd> followed by a few letters.</p>
-    </div>`;
-  } else {
-    list.innerHTML = prompts.map((p, i) => `
-      <div class="prompt-row group flex items-start gap-2 px-3 py-2.5 cursor-pointer hover:bg-slate-800/40 transition-colors ${i > 0 ? 'border-t border-slate-700/30' : ''}" data-idx="${i}">
-        <div class="flex-1 min-w-0">
-          <div class="text-[13px] font-medium text-slate-200 truncate">${esc(p.name)}</div>
-          <div class="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-relaxed">${esc(p.text)}</div>
-        </div>
-        <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5">
-          <button class="prompt-edit w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-slate-300 hover:bg-slate-700/60 transition-colors" title="Edit">
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-          </button>
-          <button class="prompt-del w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-red-400 hover:bg-slate-700/60 transition-colors" title="Delete">
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-          </button>
-        </div>
-      </div>`).join('');
-  }
+  const hint = panel.querySelector('#prompts-hint');
+  const searchInput = panel.querySelector('#prompts-search');
+  const hintKbd = panel.querySelector('.prompts-hint-kbd');
+  const hintLabel = panel.querySelector('.prompts-hint-label');
 
-  // Events
+  hint.addEventListener('click', () => {
+    hintKbd.classList.add('hidden');
+    hintLabel.classList.add('hidden');
+    searchInput.classList.remove('hidden');
+    searchInput.focus();
+  });
+
+  searchInput.addEventListener('blur', () => {
+    if (!searchInput.value) {
+      searchInput.classList.add('hidden');
+      hintKbd.classList.remove('hidden');
+      hintLabel.classList.remove('hidden');
+    }
+  });
+
+  searchInput.addEventListener('input', () => {
+    renderPromptList(prompts, searchInput.value);
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      searchInput.value = '';
+      searchInput.blur();
+      renderPromptList(prompts, '');
+    }
+  });
+
   panel.querySelector('#btn-add-prompt').addEventListener('click', () => openEditor());
 
+  const list = panel.querySelector('#prompts-list');
+
+  // Delegate clicks on the list once — survives innerHTML replacements from filtering
   list.addEventListener('click', (e) => {
     if (e.target.closest('.prompt-edit')) {
       const idx = +e.target.closest('.prompt-row').dataset.idx;
@@ -73,6 +84,43 @@ export function renderPrompts() {
       pastePrompt(prompts[idx].text);
     }
   });
+
+  renderPromptList(prompts, '');
+}
+
+function renderPromptList(prompts, filter) {
+  const list = panel.querySelector('#prompts-list');
+  const q = (filter || '').toLowerCase().trim();
+  const filtered = q ? prompts.filter(p => p.name.toLowerCase().includes(q) || p.text.toLowerCase().includes(q)) : prompts;
+  if (!prompts.length) {
+    list.innerHTML = `<div class="flex flex-col items-center justify-center h-full px-6 text-center">
+      <p class="text-sm text-slate-400 mb-1">No prompts saved</p>
+      <p class="text-xs text-slate-600 leading-relaxed">Add prompts and paste them into any terminal<br>by typing <kbd class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px] font-mono">//</kbd> followed by a few letters.</p>
+    </div>`;
+  } else if (!filtered.length) {
+    list.innerHTML = `<div class="flex items-center justify-center py-6 px-6 text-center">
+      <p class="text-xs text-slate-600">No prompts matching "${esc(q)}"</p>
+    </div>`;
+  } else {
+    list.innerHTML = filtered.map((p, i) => {
+      const idx = prompts.indexOf(p);
+      return `
+      <div class="prompt-row group flex items-start gap-2 px-3 py-2.5 cursor-pointer hover:bg-slate-800/40 transition-colors ${i > 0 ? 'border-t border-slate-700/30' : ''}" data-idx="${idx}">
+        <div class="flex-1 min-w-0">
+          <div class="text-[13px] font-medium text-slate-200 truncate">${esc(p.name)}</div>
+          <div class="text-[11px] text-slate-500 mt-0.5 line-clamp-2 leading-relaxed">${esc(p.text)}</div>
+        </div>
+        <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5">
+          <button class="prompt-edit w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-slate-300 hover:bg-slate-700/60 transition-colors" title="Edit">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+          </button>
+          <button class="prompt-del w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-red-400 hover:bg-slate-700/60 transition-colors" title="Delete">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>`;
+    }).join('');
+  }
 }
 
 function closeEditor() {

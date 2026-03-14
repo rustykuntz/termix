@@ -234,6 +234,16 @@ function onConnection(ws) {
         sessions.broadcast({ type: 'plugins', list: plugins.getInfo() });
         break;
 
+      case 'plugin.delete': {
+        const result = plugins.removePlugin(msg.pluginId);
+        if (result.success) {
+          sessions.broadcast({ type: 'plugins', list: plugins.getInfo() });
+        } else {
+          ws.send(JSON.stringify({ type: 'plugin.delete.error', pluginId: msg.pluginId, error: result.message }));
+        }
+        break;
+      }
+
       case 'remote.status': {
         let installed = false;
         try { execFileSync(whichCmd, ['clideck-remote'], { stdio: 'ignore' }); installed = true; } catch {}

@@ -44,7 +44,9 @@ function migrate(cfg) {
   if (!cfg.defaultTheme || cfg.defaultTheme === 'solarized-dark') cfg.defaultTheme = 'catppuccin-mocha';
   // Backfill and sync fields from presets
   for (const cmd of cfg.commands) {
-    const preset = matchPreset(cmd);
+    const preset = cmd.presetId ? PRESETS.find(p => p.presetId === cmd.presetId) : matchPreset(cmd);
+    // Stamp presetId for reliable lookup
+    if (preset && !cmd.presetId) cmd.presetId = preset.presetId;
     // Icon always syncs from preset — the preset is the source of truth for logos
     if (preset) cmd.icon = preset.icon;
     else if (!cmd.icon) cmd.icon = 'terminal';
@@ -67,10 +69,10 @@ function migrate(cfg) {
   }
   // Auto-add any shipped presets not yet in the commands list
   for (const preset of PRESETS) {
-    const exists = cfg.commands.some(c => matchPreset(c)?.presetId === preset.presetId);
+    const exists = cfg.commands.some(c => c.presetId === preset.presetId || matchPreset(c)?.presetId === preset.presetId);
     if (!exists) {
       cfg.commands.push({
-        id: crypto.randomUUID(), label: preset.name, icon: preset.icon,
+        id: crypto.randomUUID(), presetId: preset.presetId, label: preset.name, icon: preset.icon,
         command: preset.command, enabled: true, defaultPath: '',
         isAgent: preset.isAgent, canResume: preset.canResume,
         resumeCommand: preset.resumeCommand, sessionIdPattern: preset.sessionIdPattern,

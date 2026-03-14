@@ -21,10 +21,23 @@ function randomName() {
   return `${a} ${b}`;
 }
 
+function findCommandForPreset(p) {
+  return state.cfg.commands.find(c => c.presetId === p.presetId)
+    || state.cfg.commands.find(c => binName(c.command) === binName(p.command));
+}
+
+// True if preset binary is missing and the configured command is unchanged from the preset default
+function isPresetMissing(p) {
+  if (p.available !== false) return false;
+  const cmd = findCommandForPreset(p);
+  if (!cmd || cmd.enabled === false) return true;
+  // User changed the command from the preset default — trust it
+  return cmd.command === p.command;
+}
+
 function renderPresetButtons() {
   return sortedPresets().map(p => {
-    const hasConfigured = state.cfg.commands.some(c => binName(c.command) === binName(p.command) && c.enabled !== false);
-    const missing = p.available === false && !hasConfigured;
+    const missing = isPresetMissing(p);
     return `
       <button class="preset-btn w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-slate-700/70 text-sm transition-colors text-left ${missing ? 'text-slate-500' : 'text-slate-300'}" data-preset="${p.presetId}">
         <span class="${missing ? 'opacity-40' : ''}">${agentIcon(p.icon, 24)}</span>
@@ -38,9 +51,8 @@ function renderPresetButtons() {
 
 function sortedPresets() {
   const all = [...state.presets].filter(p => {
-    const cmd = state.cfg.commands.find(c =>
-      binName(c.command) === binName(p.command)
-    );
+    if (isPresetMissing(p)) return true;
+    const cmd = findCommandForPreset(p);
     return !cmd || cmd.enabled !== false;
   });
   const shell = all.filter(p => !p.isAgent);
@@ -55,13 +67,12 @@ function sortedPresets() {
 
 function createFromPreset(preset, sessionName, cwd, projectId) {
   // Find existing command matching this preset
-  let cmd = state.cfg.commands.find(c =>
-    binName(c.command) === binName(preset.command)
-  );
+  let cmd = findCommandForPreset(preset);
   // Auto-create the command if it doesn't exist yet
   if (!cmd) {
     cmd = {
       id: crypto.randomUUID(),
+      presetId: preset.presetId,
       label: preset.name,
       icon: preset.icon,
       command: preset.command,
@@ -199,8 +210,7 @@ export function openCreator() {
     if (!btn) return;
     const preset = state.presets.find(p => p.presetId === btn.dataset.preset);
     if (!preset) return;
-    const hasConfigured = state.cfg.commands.some(c => binName(c.command) === binName(preset.command) && c.enabled !== false);
-    if (preset.available === false && !hasConfigured && preset.installCmd) {
+    if (isPresetMissing(preset) && preset.installCmd) {
       navigator.clipboard.writeText(preset.installCmd).then(
         () => showToast(`Install command copied: <code class="text-slate-200">${esc(preset.installCmd)}</code>`, { html: true, duration: 4000 }),
         () => showToast(`Run: ${preset.installCmd}`, { duration: 4000 }),

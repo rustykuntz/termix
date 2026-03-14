@@ -1,4 +1,4 @@
-const { readdirSync, readFileSync, existsSync, mkdirSync, cpSync } = require('fs');
+const { readdirSync, readFileSync, existsSync, mkdirSync, cpSync, rmSync } = require('fs');
 const { join, sep } = require('path');
 const { DATA_DIR } = require('./paths');
 
@@ -256,6 +256,7 @@ function getInfo() {
     settingValues: cfg?.pluginSettings?.[p.manifest.id] || {},
     actions: p.actions,
     hasClient: existsSync(join(p.dir, 'client.js')),
+    bundled: BUNDLED_IDS.has(p.manifest.id),
   }));
 }
 
@@ -289,9 +290,34 @@ function shutdown() {
 
 function clearStatus(id) { sessionStatus.delete(id); }
 
+// Bundled plugin IDs — these ship with CliDeck and must not be deleted
+const BUNDLED_IDS = new Set(
+  existsSync(BUNDLED_DIR)
+    ? readdirSync(BUNDLED_DIR, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name)
+    : []
+);
+
+function removePlugin(pluginId) {
+  if (BUNDLED_IDS.has(pluginId)) return { success: false, message: 'Cannot remove a built-in plugin' };
+  const state = plugins.get(pluginId);
+  if (!state) return { success: false, message: 'Plugin not found' };
+  // Delete plugin directory first — if this fails, runtime state stays intact
+  try {
+    rmSync(state.dir, { recursive: true, force: true });
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+  // Filesystem gone — now clean up runtime state
+  for (const fn of state.shutdownFns) { try { fn(); } catch {} }
+  removeHooks(pluginId);
+  plugins.delete(pluginId);
+  console.log(`[plugin] removed ${pluginId}`);
+  return { success: true };
+}
+
 module.exports = {
-  PLUGINS_DIR,
+  PLUGINS_DIR, BUNDLED_IDS,
   init, shutdown,
   transformInput, notifyOutput, notifyStatus, notifyTranscript, clearStatus,
-  handleMessage, updateSetting, getInfo, resolveFile,
+  handleMessage, updateSetting, getInfo, resolveFile, removePlugin,
 };
