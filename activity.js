@@ -51,6 +51,11 @@ function stop() {
   interval = null;
 }
 
+function isActive(id) {
+  const s = stream[id];
+  return s ? (Date.now() - s.lastOutAt < 2000) : false;
+}
+
 function clear(id) { delete net[id]; delete stream[id]; }
 
-module.exports = { start, stop, trackIn, trackOut, clear };
+module.exports = { start, stop, trackIn, trackOut, isActive, clear };

@@ -22,10 +22,15 @@ const clients = new Set();
 // Persisted sessions awaiting resume (loaded on startup, cleared as they're resumed)
 let resumable = [];
 
+const broadcastListeners = [];
+
+function addBroadcastListener(fn) { broadcastListeners.push(fn); }
+
 function broadcast(msg) {
   const raw = JSON.stringify(msg);
   for (const c of clients) if (c.readyState === 1) c.send(raw);
   if (msg.type === 'session.status') plugins.notifyStatus(msg.id, msg.working);
+  for (const fn of broadcastListeners) try { fn(msg); } catch {}
 }
 
 // --- Spawn a PTY and wire up a session ---
@@ -67,12 +72,12 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
   }
 
   const sessionIdRe = cmd.sessionIdPattern ? new RegExp(cmd.sessionIdPattern, 'i') : null;
-  const session = { name, themeId, commandId, cwd, pty: term, chunks: [], chunksSize: 0, sessionToken: savedToken || null, projectId: projectId || null };
+  const bin = binName(cmd.command);
+  const preset = PRESETS.find(p => binName(p.command) === bin);
+  const session = { name, themeId, commandId, cwd, pty: term, chunks: [], chunksSize: 0, sessionToken: savedToken || null, projectId: projectId || null, presetId: preset?.presetId || 'shell' };
   sessions.set(id, session);
 
   // Watch for telemetry — if config isn't set up, frontend will prompt
-  const bin = binName(cmd.command);
-  const preset = PRESETS.find(p => binName(p.command) === bin);
   if (preset?.telemetrySetup && !(cmd.telemetryEnabled && cmd.telemetryStatus?.ok)) telemetry.watchSession(id, bin);
   if (preset?.bridge === 'opencode') opencodeBridge.watchSession(id, cwd);
 
@@ -132,7 +137,8 @@ function create(msg, ws, cfg) {
     return;
   }
 
-  broadcast({ type: 'created', id, name, themeId, commandId: cmd.id, projectId });
+  const createdPresetId = PRESETS.find(p => binName(p.command) === binName(cmd.command))?.presetId || 'shell';
+  broadcast({ type: 'created', id, name, themeId, commandId: cmd.id, presetId: createdPresetId, projectId });
 
   // Immediate setup notification if config not detected
   const bin = binName(cmd.command);
@@ -182,9 +188,10 @@ function resume(msg, ws, cfg) {
 
   // Remove from resumable list and notify all clients
   resumable = resumable.filter(s => s.id !== id);
-  broadcast({ type: 'sessions.resumable', list: resumable });
+  broadcast({ type: 'sessions.resumable', list: getResumable(cfg) });
 
-  broadcast({ type: 'created', id, name: saved.name, themeId: saved.themeId || saved.profileId || 'default', commandId: saved.commandId, projectId: saved.projectId || null, muted: !!saved.muted, resumed: true, lastPreview: saved.lastPreview || '' });
+  const resumePresetId = PRESETS.find(p => binName(p.command) === binName(cmd.command))?.presetId || saved.presetId || 'shell';
+  broadcast({ type: 'created', id, name: saved.name, themeId: saved.themeId || saved.profileId || 'default', commandId: saved.commandId, presetId: resumePresetId, projectId: saved.projectId || null, muted: !!saved.muted, resumed: true, lastPreview: saved.lastPreview || '' });
 }
 
 // --- Standard session operations ---
@@ -214,13 +221,13 @@ function setMute(id, muted) {
   return false;
 }
 
-function close(msg) {
+function close(msg, cfg) {
   const s = sessions.get(msg.id);
   if (s) { s.pty.kill(); telemetry.clear(msg.id); transcript.clear(msg.id); plugins.clearStatus(msg.id); sessions.delete(msg.id); broadcast({ type: 'closed', id: msg.id }); }
   // Also remove from resumable list if present
   const before = resumable.length;
   resumable = resumable.filter(r => r.id !== msg.id);
-  if (resumable.length !== before) broadcast({ type: 'sessions.resumable', list: resumable });
+  if (resumable.length !== before) broadcast({ type: 'sessions.resumable', list: getResumable(cfg) });
 }
 
 // Restart a live session's PTY with updated env (e.g. after polarity flip).
@@ -271,7 +278,7 @@ function restart(msg, ws, cfg) {
 
 function list() {
   return [...sessions].map(([id, s]) => ({
-    id, name: s.name, themeId: s.themeId, commandId: s.commandId, projectId: s.projectId, muted: !!s.muted,
+    id, name: s.name, themeId: s.themeId, commandId: s.commandId, presetId: s.presetId || 'shell', projectId: s.projectId, muted: !!s.muted,
     // Last preview text for sidebar display on reconnect
     lastPreview: s.lastPreview || '', lastActivityAt: s.lastActivityAt || null,
   }));
@@ -292,7 +299,16 @@ function setProject(id, projectId) {
   return false;
 }
 
-function getResumable() { return resumable; }
+function getResumable(cfg) {
+  if (!cfg) return resumable;
+  return resumable.map(s => {
+    if (s.presetId) return s;
+    const cmd = (cfg.commands || []).find(c => c.id === s.commandId);
+    if (!cmd) return { ...s, presetId: 'shell' };
+    const preset = PRESETS.find(p => binName(p.command) === binName(cmd.command));
+    return { ...s, presetId: preset?.presetId || 'shell' };
+  });
+}
 
 function sendBuffers(ws) {
   for (const [id, s] of sessions) {
@@ -317,7 +333,7 @@ function saveSessions(cfg) {
       return true;
     })
     .map(([id, s]) => ({
-      id, name: s.name, commandId: s.commandId, cwd: s.cwd,
+      id, name: s.name, commandId: s.commandId, presetId: s.presetId || 'shell', cwd: s.cwd,
       themeId: s.themeId, sessionToken: s.sessionToken, projectId: s.projectId, muted: !!s.muted,
       lastPreview: s.lastPreview || '', lastActivityAt: s.lastActivityAt || null,
       savedAt: new Date().toISOString(),
@@ -368,7 +384,7 @@ function shutdown(cfg) {
 }
 
 module.exports = {
-  clients, broadcast, getSessions: () => sessions,
+  clients, broadcast, addBroadcastListener, getSessions: () => sessions,
   create, resume, restart, input, resize, rename, setTheme, setMute, setProject, setPreview, close,
   list, getResumable, sendBuffers,
   loadSessions, startAutoSave, shutdown,

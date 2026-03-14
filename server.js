@@ -12,7 +12,7 @@ const plugins = require('./plugin-loader');
 
 ensurePtyHelper();
 sessions.loadSessions();
-transcript.init(sessions.broadcast, new Set(sessions.getResumable().map(s => s.id)));
+transcript.init(sessions.broadcast, new Set(sessions.getResumable().map(s => s.id)), (...args) => plugins.notifyTranscript(...args));
 telemetry.init(sessions.broadcast, sessions.getSessions);
 require('./opencode-bridge').init(sessions.broadcast, sessions.getSessions);
 const config = require('./config');

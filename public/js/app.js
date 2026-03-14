@@ -22,6 +22,7 @@ function connect() {
     document.getElementById('session-list').innerHTML = '';
     state.active = null;
     document.getElementById('empty').style.display = 'flex';
+    send({ type: 'remote.status' });
   };
 
   state.ws.onmessage = ({ data }) => {
@@ -201,6 +202,24 @@ function connect() {
         break;
       case 'plugins':
         loadPlugins(msg.list);
+        break;
+      case 'remote.status':
+        handleRemoteStatus(msg);
+        break;
+      case 'remote.paired':
+        handleRemotePaired(msg);
+        break;
+      case 'remote.unpaired':
+        handleRemoteUnpaired();
+        break;
+      case 'remote.error':
+        handleRemoteError(msg.error);
+        break;
+      case 'remote.install.progress':
+        appendInstallLog(msg.text);
+        break;
+      case 'remote.install.done':
+        handleInstallDone(msg.success);
         break;
       default:
         if (msg.type?.startsWith('plugin.')) dispatchPluginMessage(msg);
@@ -672,7 +691,7 @@ function renderPluginsPanel(list) {
   if (!list.length) {
     container.innerHTML = `<div class="flex flex-col items-center justify-center h-full px-6 text-center">
       <p class="text-sm text-slate-400 mb-1">No plugins installed</p>
-      <p class="text-xs text-slate-600 leading-relaxed">Plugins live in <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">~/.clideck/plugins/</code><br>Each one is a folder with a <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">clideck-plugin.json</code> and <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">index.js</code></p>
+      <p class="text-xs text-slate-600 leading-relaxed">Plugins live in <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">${esc(state.cfg.pluginsDir || '~/.clideck/plugins')}</code><br>Each one is a folder with a <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">clideck-plugin.json</code> and <code class="px-1 py-0.5 rounded bg-slate-800 text-slate-400 text-[11px]">index.js</code></p>
     </div>`;
     return;
   }
@@ -832,6 +851,286 @@ function initSessionScrollbarVisibility() {
     t = setTimeout(() => el.classList.remove('is-scrolling'), 220);
   }, { passive: true });
 }
+
+// --- Remote (thin connector to clideck-remote CLI) ---
+
+const remoteModal = document.getElementById('remote-modal');
+const remotePanes = {
+  intro: document.getElementById('remote-intro'),
+  installing: document.getElementById('remote-installing'),
+  connecting: document.getElementById('remote-connecting'),
+  qr: document.getElementById('remote-qr'),
+  active: document.getElementById('remote-active'),
+  error: document.getElementById('remote-error'),
+};
+const btnRemote = document.getElementById('btn-remote');
+
+let remoteInstalled = false;
+let remoteState = 'idle'; // idle | connecting | waiting | paired
+let remoteModalOpen = false;
+let remoteStatusPoll = null;
+let remoteConnectedAt = null;
+let remoteStatsTimer = null;
+
+function startRemotePoll() {
+  stopRemotePoll();
+  remoteStatusPoll = setInterval(() => {
+    if (remoteState === 'waiting' || remoteState === 'paired') send({ type: 'remote.status' });
+    else stopRemotePoll();
+  }, 3000);
+}
+
+function stopRemotePoll() {
+  if (remoteStatusPoll) { clearInterval(remoteStatusPoll); remoteStatusPoll = null; }
+}
+
+function setRemotePane(pane) {
+  for (const [k, el] of Object.entries(remotePanes)) {
+    el.classList.toggle('hidden', k !== pane);
+  }
+}
+
+function openRemoteModal() {
+  remoteModalOpen = true;
+  remoteModal.classList.remove('hidden');
+  remoteModal.style.display = 'flex';
+}
+
+function closeRemoteModal() {
+  if (remoteState === 'paired') return; // can't dismiss while connected
+  remoteModalOpen = false;
+  remoteModal.classList.add('hidden');
+  remoteModal.style.display = '';
+  setRemoteLock(false);
+}
+
+let remoteLocked = false;
+
+function remoteLockKeyTrap(e) {
+  // Only allow Tab within the modal and the Disconnect button
+  const modal = document.getElementById('remote-modal');
+  if (modal && modal.contains(e.target)) return;
+  e.stopPropagation();
+  e.preventDefault();
+}
+
+function setRemoteLock(locked) {
+  remoteLocked = locked;
+  const modal = document.getElementById('remote-modal');
+  const closeBtn = document.getElementById('remote-close');
+  if (locked) {
+    modal.style.backdropFilter = 'blur(24px)';
+    modal.style.webkitBackdropFilter = 'blur(24px)';
+    modal.style.background = 'rgba(0,0,0,0.75)';
+    closeBtn.classList.add('hidden');
+    // Blur any focused terminal/element and trap keyboard
+    if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+    }
+    window.addEventListener('keydown', remoteLockKeyTrap, true);
+    window.addEventListener('keypress', remoteLockKeyTrap, true);
+    window.addEventListener('keyup', remoteLockKeyTrap, true);
+    // Focus the disconnect button so keyboard focus is inside the modal
+    const disconnectBtn = document.getElementById('remote-disconnect2');
+    if (disconnectBtn) disconnectBtn.focus();
+  } else {
+    modal.style.backdropFilter = '';
+    modal.style.webkitBackdropFilter = '';
+    modal.style.background = '';
+    closeBtn.classList.remove('hidden');
+    window.removeEventListener('keydown', remoteLockKeyTrap, true);
+    window.removeEventListener('keypress', remoteLockKeyTrap, true);
+    window.removeEventListener('keyup', remoteLockKeyTrap, true);
+  }
+}
+
+function startRemoteStats(pairedAt) {
+  if (remoteStatsTimer) { clearInterval(remoteStatsTimer); remoteStatsTimer = null; }
+  remoteConnectedAt = pairedAt || Date.now();
+  updateRemoteStats();
+  remoteStatsTimer = setInterval(updateRemoteStats, 1000);
+}
+
+function stopRemoteStats() {
+  if (remoteStatsTimer) { clearInterval(remoteStatsTimer); remoteStatsTimer = null; }
+  remoteConnectedAt = null;
+}
+
+function updateRemoteStats() {
+  if (!remoteConnectedAt) return;
+  const elapsed = Math.floor((Date.now() - remoteConnectedAt) / 1000);
+  const m = Math.floor(elapsed / 60);
+  const s = elapsed % 60;
+  const h = Math.floor(m / 60);
+  const timeStr = h > 0 ? `${h}:${String(m % 60).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+  const el = document.getElementById('remote-stat-time');
+  if (el) el.textContent = timeStr;
+  const sessEl = document.getElementById('remote-stat-sessions');
+  if (sessEl) sessEl.textContent = document.querySelectorAll('.group[data-id]').length || '0';
+}
+
+function updateRemoteButton() {
+  btnRemote.classList.toggle('text-blue-400', remoteState === 'waiting');
+  btnRemote.classList.toggle('text-emerald-400', remoteState === 'paired');
+  if (remoteState === 'idle' || remoteState === 'connecting') {
+    btnRemote.classList.remove('text-blue-400', 'text-emerald-400');
+  }
+}
+
+function updatePlanDisplay(plan) {
+  const isPro = plan === 'pro';
+  const badge = isPro ? 'Pro' : 'Free';
+  const badgeClass = isPro
+    ? 'text-[9px] font-semibold uppercase tracking-wider px-1.5 py-px rounded-full bg-emerald-900/50 text-emerald-400'
+    : 'text-[9px] font-semibold uppercase tracking-wider px-1.5 py-px rounded-full bg-slate-700 text-slate-400';
+  for (const el of document.querySelectorAll('#remote-plan-badge, #remote-plan-badge2')) {
+    el.textContent = badge;
+    el.className = badgeClass;
+  }
+  for (const el of document.querySelectorAll('#remote-upgrade, #remote-upgrade2')) {
+    el.classList.toggle('hidden', isPro);
+  }
+}
+
+function handleRemoteStatus(msg) {
+  remoteInstalled = !!msg.installed;
+  const wasPaired = remoteState === 'paired';
+  if (!msg.installed) {
+    remoteState = 'idle';
+    stopRemotePoll();
+    if (wasPaired) { stopRemoteStats(); setRemoteLock(false); }
+  } else if (msg.paired) {
+    const wasFresh = remoteState !== 'paired';
+    remoteState = 'paired';
+    if (!remoteStatusPoll) startRemotePoll();
+    if (wasFresh) {
+      updatePlanDisplay(msg.plan || 'free');
+      setRemotePane('active');
+      setRemoteLock(true);
+      startRemoteStats(msg.pairedAt);
+      if (!remoteModalOpen) openRemoteModal();
+    }
+    const deviceEl = document.getElementById('remote-device-info');
+    if (deviceEl) {
+      const parts = [msg.deviceName, msg.location].filter(Boolean);
+      deviceEl.textContent = parts.length ? parts.join(' \u00b7 ') : '';
+    }
+  } else if (msg.connected && msg.url) {
+    remoteState = 'waiting';
+    if (wasPaired) { stopRemoteStats(); setRemoteLock(false); }
+    document.getElementById('remote-url-box').textContent = msg.url;
+    const qrImg = document.getElementById('remote-qr-img');
+    if (msg.qr && msg.qr.startsWith('data:')) { qrImg.src = msg.qr; qrImg.classList.remove('hidden'); }
+    else qrImg.classList.add('hidden');
+    updatePlanDisplay(msg.plan || 'free');
+    startRemotePoll();
+    if (remoteModalOpen) setRemotePane('qr');
+  } else {
+    remoteState = 'idle';
+    stopRemotePoll();
+    if (wasPaired) { stopRemoteStats(); setRemoteLock(false); }
+  }
+  updateRemoteButton();
+}
+
+function handleRemotePaired(msg) {
+  remoteInstalled = true;
+  remoteState = 'waiting';
+  document.getElementById('remote-url-box').textContent = msg.url || '';
+  const qrImg = document.getElementById('remote-qr-img');
+  if (msg.qr && msg.qr.startsWith('data:')) { qrImg.src = msg.qr; qrImg.classList.remove('hidden'); }
+  else qrImg.classList.add('hidden');
+  updatePlanDisplay(msg.plan || 'free');
+  setRemotePane('qr');
+  updateRemoteButton();
+  startRemotePoll();
+}
+
+function handleRemoteUnpaired() {
+  remoteState = 'idle';
+  stopRemotePoll();
+  stopRemoteStats();
+  setRemoteLock(false);
+  closeRemoteModal();
+  updateRemoteButton();
+}
+
+function handleRemoteError(error) {
+  document.getElementById('remote-error-text').textContent = error || 'Unknown error';
+  setRemotePane('error');
+  remoteState = 'idle';
+  stopRemotePoll();
+  updateRemoteButton();
+}
+
+function appendInstallLog(text) {
+  const log = document.getElementById('remote-install-log');
+  log.textContent += text;
+  log.scrollTop = log.scrollHeight;
+}
+
+function handleInstallDone(success) {
+  if (success) {
+    remoteInstalled = true;
+    // Installed — go straight to pairing
+    remoteState = 'connecting';
+    setRemotePane('connecting');
+    send({ type: 'remote.pair' });
+  } else {
+    const log = document.getElementById('remote-install-log');
+    log.textContent += '\n— Install failed. Check permissions or run manually:\n  npm install -g clideck-remote\n';
+    log.scrollTop = log.scrollHeight;
+  }
+}
+
+// Button click
+btnRemote.addEventListener('click', () => {
+  if (remoteModalOpen && remoteState !== 'paired') { closeRemoteModal(); return; }
+  if (remoteModalOpen) return; // paired — can't dismiss
+  if (!remoteInstalled) {
+    setRemotePane('intro');
+    document.getElementById('remote-install-log').textContent = '';
+    openRemoteModal();
+    return;
+  }
+  if (remoteState === 'idle') {
+    remoteState = 'connecting';
+    setRemotePane('connecting');
+    openRemoteModal();
+    send({ type: 'remote.pair' });
+  } else {
+    setRemotePane(remoteState === 'paired' ? 'active' : remoteState === 'waiting' ? 'qr' : 'connecting');
+    openRemoteModal();
+  }
+});
+
+// Install button
+document.getElementById('remote-add').addEventListener('click', () => {
+  document.getElementById('remote-install-log').textContent = '';
+  setRemotePane('installing');
+  send({ type: 'remote.install' });
+});
+
+// Close / disconnect
+document.getElementById('remote-close').addEventListener('click', closeRemoteModal);
+document.getElementById('remote-error-dismiss').addEventListener('click', closeRemoteModal);
+
+document.getElementById('remote-copy').addEventListener('click', () => {
+  navigator.clipboard.writeText(document.getElementById('remote-url-box').textContent).then(() => {
+    const btn = document.getElementById('remote-copy');
+    btn.textContent = 'copied!';
+    setTimeout(() => { btn.textContent = 'copy the link'; }, 1500);
+  });
+});
+document.getElementById('remote-url-box').addEventListener('click', () => {
+  navigator.clipboard.writeText(document.getElementById('remote-url-box').textContent);
+});
+
+function doRemoteDisconnect() {
+  send({ type: 'remote.unpair' });
+}
+document.getElementById('remote-disconnect').addEventListener('click', doRemoteDisconnect);
+document.getElementById('remote-disconnect2').addEventListener('click', doRemoteDisconnect);
 
 initDrag();
 initSessionScrollbarVisibility();

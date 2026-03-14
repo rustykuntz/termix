@@ -75,6 +75,10 @@ Full setup guides, agent configuration, and plugin development:
 
 **[Documentation](https://docs.clideck.dev/)**
 
+## Acknowledgments
+
+Built with [xterm.js](https://xtermjs.org/).
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

@@ -81,14 +81,6 @@ function handleLogs(req, res) {
       }
     }
 
-    // DEBUG: dump attributes if we haven't captured a session ID yet
-    if (!captured && sess && !sess.sessionToken && resolvedId) {
-      const allAttrs = [];
-      for (const sl of rl.scopeLogs || []) {
-        for (const lr of sl.logRecords || []) allAttrs.push(Object.keys(parseAttrs(lr.attributes)));
-      }
-      console.log(`Telemetry [${agent}]: no session.id found. Record attrs: ${JSON.stringify([...new Set(allAttrs.flat())])}`);
-    }
   }
 
   res.writeHead(200).end('{}');

@@ -439,7 +439,7 @@ function saveConfig() {
   const agentCards = document.querySelectorAll('.agent-card');
   state.cfg.commands = [...agentCards].map((card, i) => {
     const existing = state.cfg.commands[i] || {};
-    const command = card.querySelector('.agent-command').value.trim() || state.cfg.defaultShell || '/bin/zsh';
+    const command = card.querySelector('.agent-command').value.trim() || state.cfg.defaultShell;
     const isClaude = binName(command) === 'claude';
     return {
       id: existing.id || crypto.randomUUID(),

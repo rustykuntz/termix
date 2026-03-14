@@ -332,7 +332,7 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
     // Keep ANSI/truecolor output readable across dark and light terminal themes.
     minimumContrastRatio: MIN_CONTRAST_RATIO,
     cursorBlink: true,
-    scrollback: 5000,
+    scrollback: 10000,
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
@@ -341,21 +341,34 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   term.open(el);
   attachToTerminal(term);
   let fitted = false, pending = [];
-  const ro = new ResizeObserver(() => {
-    if (!el.offsetWidth) return;
+  // [FIT-GUARD] only call fit() when proposed dimensions actually change — prevents
+  // unnecessary buffer reflows that cause scrollbar jumpiness on sub-pixel layout shifts
+  let fitRaf = 0;
+  function doFit() {
+    const dims = fit.proposeDimensions();
+    if (!dims || (dims.cols === term.cols && dims.rows === term.rows)) return;
     fit.fit();
     send({ type: 'resize', id, cols: term.cols, rows: term.rows });
+  }
+  const ro = new ResizeObserver(() => {
+    if (!el.offsetWidth) return;
     if (!fitted) {
       fitted = true;
+      fit.fit();
+      send({ type: 'resize', id, cols: term.cols, rows: term.rows });
       for (const chunk of pending) term.write(chunk);
       pending = null;
       updatePreview(id);
+      return;
     }
+    if (fitRaf) return;
+    fitRaf = requestAnimationFrame(() => { fitRaf = 0; doFit(); });
   });
   ro.observe(el);
   // Safety: if RO hasn't fired within 500ms, flush anyway to avoid unbounded queue
   setTimeout(() => { if (!fitted) { fitted = true; for (const chunk of pending) term.write(chunk); pending = null; updatePreview(id); } }, 500);
-  state.terms.set(id, { term, fit, el, ro, themeId, commandId, projectId: projectId || null, muted: !!muted, working: !hasBridge, workStartedAt: hasBridge ? null : Date.now(), stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '' });
+  const cancelFitRaf = () => { if (fitRaf) { cancelAnimationFrame(fitRaf); fitRaf = 0; } };
+  state.terms.set(id, { term, fit, el, ro, cancelFitRaf, themeId, commandId, projectId: projectId || null, muted: !!muted, working: !hasBridge, workStartedAt: hasBridge ? null : Date.now(), stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '' });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';
   if (muted) requestAnimationFrame(() => updateMuteIndicator(id));
@@ -367,6 +380,7 @@ export function removeTerminal(id) {
   const entry = state.terms.get(id);
   if (!entry) return;
   if (entry.stopBounce) entry.stopBounce();
+  entry.cancelFitRaf?.();
   entry.ro?.disconnect();
   entry.term.dispose();
   entry.el.remove();
@@ -498,6 +512,17 @@ function setStatus(id, working) {
         n.onclick = () => { window.focus(); select(id); n.close(); };
       }
     }
+  }
+
+  // Extract terminal buffer on working→idle for clean transcript
+  if (wasWorking && !working && entry.term) {
+    const buf = entry.term.buffer.active;
+    const lines = [];
+    for (let i = 0; i < buf.length; i++) {
+      const line = buf.getLine(i);
+      if (line) lines.push(line.translateToString(true));
+    }
+    send({ type: 'terminal.buffer', id, lines });
   }
 
   if (working) entry.workStartedAt = Date.now();

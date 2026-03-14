@@ -32,6 +32,7 @@ const plugins = new Map();
 const inputHooks = [];
 const outputHooks = [];
 const statusHooks = [];
+const transcriptHooks = [];
 const sessionStatus = new Map(); // sessionId → boolean (dedup multi-client reports)
 const frontendHandlers = new Map();
 let broadcastFn = null;
@@ -41,7 +42,7 @@ let saveConfigFn = null;
 const settingsChangeHandlers = new Map(); // pluginId → [fn]
 
 function removeHooks(pluginId) {
-  for (const arr of [inputHooks, outputHooks, statusHooks]) {
+  for (const arr of [inputHooks, outputHooks, statusHooks, transcriptHooks]) {
     for (let i = arr.length - 1; i >= 0; i--) {
       if (arr[i].pluginId === pluginId) arr.splice(i, 1);
     }
@@ -111,6 +112,7 @@ function buildApi(pluginId, pluginDir, state) {
     onSessionInput(fn) { inputHooks.push({ pluginId, fn }); },
     onSessionOutput(fn) { outputHooks.push({ pluginId, fn }); },
     onStatusChange(fn) { statusHooks.push({ pluginId, fn }); },
+    onTranscriptEntry(fn) { transcriptHooks.push({ pluginId, fn }); },
 
     sendToFrontend(event, data = {}) {
       broadcastFn?.({ ...data, type: `plugin.${pluginId}.${event}` });
@@ -181,6 +183,13 @@ function notifyStatus(id, working) {
   for (const h of statusHooks) {
     try { h.fn(id, working); }
     catch (e) { console.error(`[plugin:${h.pluginId}] status error: ${e.message}`); }
+  }
+}
+
+function notifyTranscript(id, role, text) {
+  for (const h of transcriptHooks) {
+    try { h.fn(id, role, text); }
+    catch (e) { console.error(`[plugin:${h.pluginId}] transcript error: ${e.message}`); }
   }
 }
 
@@ -281,7 +290,8 @@ function shutdown() {
 function clearStatus(id) { sessionStatus.delete(id); }
 
 module.exports = {
+  PLUGINS_DIR,
   init, shutdown,
-  transformInput, notifyOutput, notifyStatus, clearStatus,
+  transformInput, notifyOutput, notifyStatus, notifyTranscript, clearStatus,
   handleMessage, updateSetting, getInfo, resolveFile,
 };

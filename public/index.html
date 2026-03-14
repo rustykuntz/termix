@@ -148,6 +148,9 @@
       <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="3"/><path d="M12 8V6m0 12v-2M8 12H6m12 0h-2"/></svg>
     </button>
     <div class="flex-1"></div>
+    <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" id="btn-remote" title="Mobile Remote">
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+    </button>
     <button class="theme-toggle rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" id="btn-theme-toggle" title="Toggle light/dark mode">
       <svg class="icon-sun w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
       <svg class="icon-moon w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -336,6 +339,104 @@
         </div>
       </div>
 
+    </div>
+
+    <!-- Remote modal -->
+    <div id="remote-modal" class="absolute inset-0 z-[260] bg-black/60 backdrop-blur-sm hidden items-center justify-center">
+      <div style="background:var(--color-dialog);border:1px solid color-mix(in srgb, var(--color-muted) 40%, transparent);box-shadow:0 25px 60px -12px var(--color-shadow)" class="rounded-2xl w-[340px] flex flex-col overflow-hidden">
+        <div class="px-5 py-3.5 flex items-center justify-between">
+          <span class="text-[13px] font-semibold text-slate-200">Mobile Remote</span>
+          <button id="remote-close" class="w-6 h-6 flex items-center justify-center rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <!-- Intro (not installed) -->
+        <div id="remote-intro" class="hidden px-6 py-6 flex flex-col items-center gap-4">
+          <svg class="w-12 h-12 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          <h3 class="text-[13px] font-semibold text-slate-200">CliDeck Mobile Remote</h3>
+          <p class="text-xs text-slate-400 text-center leading-relaxed">Control your AI agents from your phone. See live status, send messages, and get notifications — all end-to-end encrypted.</p>
+          <button id="remote-add" class="mt-1 w-full px-4 py-2.5 text-[13px] font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">Add to CliDeck</button>
+          <p class="text-[11px] text-slate-600 text-center">Installs the <code class="text-slate-500">clideck-remote</code> package via npm</p>
+        </div>
+
+        <!-- Installing -->
+        <div id="remote-installing" class="hidden px-5 py-4 flex flex-col gap-3">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 animate-spin text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+            <span class="text-xs text-slate-300">Installing clideck-remote…</span>
+          </div>
+          <pre id="remote-install-log" class="max-h-[160px] overflow-y-auto px-3 py-2 bg-slate-900/70 rounded-lg border border-slate-700/40 text-[11px] text-slate-400 font-mono leading-relaxed whitespace-pre-wrap"></pre>
+        </div>
+
+        <!-- Connecting -->
+        <div id="remote-connecting" class="hidden px-5 py-6 flex flex-col items-center gap-2">
+          <svg class="w-6 h-6 animate-spin text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+          <span class="text-xs text-slate-400">Connecting to relay…</span>
+        </div>
+
+        <!-- QR / waiting for phone -->
+        <div id="remote-qr" class="hidden flex flex-col items-center w-full">
+          <div id="remote-url-box" class="hidden"></div>
+          <div class="py-6 px-6 flex flex-col items-center w-full">
+            <p class="text-sm font-medium text-slate-300 mb-4">Scan with your phone</p>
+            <img id="remote-qr-img" class="w-[180px] h-[180px] rounded-2xl hidden" alt="QR code" style="padding:12px;background:white">
+            <p class="mt-4 text-xs text-slate-400">or <button id="remote-copy" class="font-semibold underline underline-offset-2 text-slate-300 hover:text-slate-200 transition-colors">copy the link</button> to open on your device</p>
+            <div class="mt-5 w-full px-4 py-3 rounded-lg text-center" style="background:color-mix(in srgb, var(--color-surface) 70%, transparent)">
+              <div class="flex items-center justify-center gap-1.5">
+                <span id="remote-plan-badge" class="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-px rounded-full bg-slate-700 text-slate-400">Free</span>
+                <span class="text-[11px] text-slate-500">&middot; 1 active session</span>
+              </div>
+              <p class="mt-1 text-[11px] text-slate-500"><a id="remote-upgrade" href="https://clideck.dev/pro" target="_blank" class="text-blue-400 hover:text-blue-300 transition-colors">Upgrade to Pro</a> for unlimited sessions</p>
+            </div>
+            <button id="remote-disconnect" class="mt-3 w-full py-2 text-[11px] text-slate-500 hover:text-slate-400 transition-colors">Disconnect</button>
+          </div>
+          <div class="w-full border-t border-slate-700/40 px-6 py-3 flex items-center justify-center gap-1.5 text-slate-400">
+            <svg class="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span class="text-[11px] font-medium">Your sessions are end-to-end encrypted</span>
+          </div>
+        </div>
+
+        <!-- Paired / active -->
+        <div id="remote-active" class="hidden flex flex-col items-center w-full">
+          <div class="py-6 px-6 flex flex-col items-center w-full gap-4">
+            <div class="flex items-center gap-2 text-emerald-400">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
+              <span class="text-[13px] font-medium">Connected</span>
+            </div>
+            <p id="remote-device-info" class="text-[11px] text-slate-500 -mt-2"></p>
+
+            <div id="remote-stats" class="w-full grid grid-cols-2 gap-2 text-center">
+              <div class="px-3 py-2.5 rounded-lg" style="background:color-mix(in srgb, var(--color-surface) 70%, transparent)">
+                <div id="remote-stat-time" class="text-sm font-mono text-slate-200">0:00</div>
+                <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Connected</div>
+              </div>
+              <div class="px-3 py-2.5 rounded-lg" style="background:color-mix(in srgb, var(--color-surface) 70%, transparent)">
+                <div id="remote-stat-sessions" class="text-sm font-mono text-slate-200">0</div>
+                <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Sessions</div>
+              </div>
+            </div>
+
+            <button id="remote-disconnect2" class="w-full py-2.5 text-[11px] font-medium text-red-400 hover:text-red-300 rounded-lg transition-colors" style="background:color-mix(in srgb, var(--color-surface) 70%, transparent)">Disconnect</button>
+          </div>
+          <div class="w-full border-t border-slate-700/40 px-6 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-1.5 text-emerald-500/70">
+              <svg class="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span class="text-[11px]">End-to-end encrypted</span>
+            </div>
+            <div id="remote-plan-active" class="flex items-center gap-1.5">
+              <span id="remote-plan-badge2" class="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-px rounded-full bg-slate-700 text-slate-400">Free</span>
+              <a id="remote-upgrade2" href="https://clideck.dev/pro" target="_blank" class="text-[11px] text-blue-400 hover:text-blue-300 transition-colors">Upgrade</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div id="remote-error" class="hidden px-5 py-4 flex flex-col items-center gap-3">
+          <p id="remote-error-text" class="text-xs text-red-400 text-center"></p>
+          <button id="remote-error-dismiss" class="px-4 py-2 text-xs text-slate-400 hover:text-slate-300 transition-colors">Close</button>
+        </div>
+      </div>
     </div>
 
     <!-- Confirmation dialog -->

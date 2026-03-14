@@ -11,6 +11,23 @@ for (const p of presets) if (p.presetId === 'shell') p.command = defaultShell;
 const transcript = require('./transcript');
 const plugins = require('./plugin-loader');
 
+const opencodePluginDir = join(
+  process.platform === 'win32' ? (process.env.APPDATA || join(os.homedir(), 'AppData', 'Roaming')) : join(os.homedir(), '.config'),
+  'opencode', 'plugins'
+);
+// Resolve opencode preset paths for current platform
+for (const p of presets) {
+  if (p.presetId !== 'opencode') continue;
+  const bridgePath = join(opencodePluginDir, 'clideck-bridge.js');
+  if (p.pluginPath) p.pluginPath = bridgePath;
+  if (p.pluginSetup) {
+    const copyCmd = process.platform === 'win32'
+      ? `copy opencode-plugin\\clideck-bridge.js "${opencodePluginDir}\\"`
+      : `cp opencode-plugin/clideck-bridge.js ${opencodePluginDir}/`;
+    p.pluginSetup = `Install the CliDeck bridge plugin to enable real-time status and resume.\n\n${copyCmd}`;
+  }
+}
+
 // Check which agent binaries are available on PATH
 const whichCmd = process.platform === 'win32' ? 'where' : 'which';
 function checkAvailability() {
@@ -47,8 +64,7 @@ function detectTelemetryConfig(c) {
         detected = !!s.telemetry?.enabled && (s.telemetry?.otlpEndpoint || '').includes(`localhost:${port}`);
       } catch {}
     } else if (preset.presetId === 'opencode') {
-      const ocPlugins = join(home, '.config', 'opencode', 'plugins');
-      detected = existsSync(join(ocPlugins, 'clideck-bridge.js')) || existsSync(join(ocPlugins, 'termix-bridge.js'));
+      detected = existsSync(join(opencodePluginDir, 'clideck-bridge.js')) || existsSync(join(opencodePluginDir, 'termix-bridge.js'));
     } else { continue; }
     if (detected !== !!cmd.telemetryEnabled) {
       cmd.telemetryEnabled = detected;
@@ -60,14 +76,18 @@ function detectTelemetryConfig(c) {
   return changed;
 }
 
+function configForClient() {
+  return { ...cfg, pluginsDir: plugins.PLUGINS_DIR };
+}
+
 function onConnection(ws) {
   sessions.clients.add(ws);
 
-  ws.send(JSON.stringify({ type: 'config', config: cfg }));
+  ws.send(JSON.stringify({ type: 'config', config: configForClient() }));
   ws.send(JSON.stringify({ type: 'themes', themes }));
   ws.send(JSON.stringify({ type: 'presets', presets }));
   ws.send(JSON.stringify({ type: 'sessions', list: sessions.list() }));
-  ws.send(JSON.stringify({ type: 'sessions.resumable', list: sessions.getResumable() }));
+  ws.send(JSON.stringify({ type: 'sessions.resumable', list: sessions.getResumable(cfg) }));
   ws.send(JSON.stringify({ type: 'transcript.cache', cache: transcript.getCache() }));
   ws.send(JSON.stringify({ type: 'plugins', list: plugins.getInfo() }));
   sessions.sendBuffers(ws);
@@ -82,14 +102,20 @@ function onConnection(ws) {
       case 'session.restart': console.log('[handler] session.restart', msg.id); sessions.restart(msg, ws, cfg); break;
       case 'input':                sessions.input(msg); break;
       case 'session.statusReport':
-        if (sessions.getSessions().has(msg.id)) plugins.notifyStatus(msg.id, !!msg.working);
+        if (sessions.getSessions().has(msg.id)) {
+          plugins.notifyStatus(msg.id, !!msg.working);
+        }
+        break;
+      case 'terminal.buffer':
+        require('./transcript').storeBuffer(msg.id, msg.lines);
+        sessions.broadcast({ type: 'screen.updated', id: msg.id });
         break;
       case 'resize':               sessions.resize(msg); break;
       case 'rename':          sessions.rename(msg); break;
-      case 'close':           sessions.close(msg); break;
+      case 'close':           sessions.close(msg, cfg); break;
 
       case 'config.get':
-        ws.send(JSON.stringify({ type: 'config', config: cfg }));
+        ws.send(JSON.stringify({ type: 'config', config: configForClient() }));
         break;
 
       case 'checkAvailability':
@@ -98,10 +124,11 @@ function onConnection(ws) {
         break;
 
       case 'config.update':
+        delete msg.config.pluginsDir;
         cfg = { ...cfg, ...msg.config };
         detectTelemetryConfig(cfg);
         config.save(cfg);
-        sessions.broadcast({ type: 'config', config: cfg });
+        sessions.broadcast({ type: 'config', config: configForClient() });
         break;
 
       case 'session.theme': {
@@ -129,7 +156,7 @@ function onConnection(ws) {
           }
         }
         config.save(cfg);
-        sessions.broadcast({ type: 'config', config: cfg });
+        sessions.broadcast({ type: 'config', config: configForClient() });
         ws.send(JSON.stringify({
           type: 'telemetry.autosetup.result',
           presetId: msg.presetId,
@@ -159,7 +186,7 @@ function onConnection(ws) {
           }
         }
         config.save(cfg);
-        sessions.broadcast({ type: 'config', config: cfg });
+        sessions.broadcast({ type: 'config', config: configForClient() });
         break;
       }
 
@@ -185,11 +212,11 @@ function onConnection(ws) {
         if (!proj) break;
         // Kill all sessions in this project
         for (const s of sessions.list()) {
-          if (s.projectId === msg.id) sessions.close({ id: s.id });
+          if (s.projectId === msg.id) sessions.close({ id: s.id }, cfg);
         }
         cfg.projects = cfg.projects.filter(p => p.id !== msg.id);
         config.save(cfg);
-        sessions.broadcast({ type: 'config', config: cfg });
+        sessions.broadcast({ type: 'config', config: configForClient() });
         break;
       }
 
@@ -206,6 +233,55 @@ function onConnection(ws) {
         plugins.updateSetting(msg.pluginId, msg.key, msg.value);
         sessions.broadcast({ type: 'plugins', list: plugins.getInfo() });
         break;
+
+      case 'remote.status': {
+        let installed = false;
+        try { execFileSync(whichCmd, ['clideck-remote'], { stdio: 'ignore' }); installed = true; } catch {}
+        if (!installed) { ws.send(JSON.stringify({ type: 'remote.status', installed: false })); break; }
+        require('child_process').execFile('clideck-remote', ['status', '--json'], { timeout: 5000 }, (err, stdout) => {
+          if (err) { ws.send(JSON.stringify({ type: 'remote.status', installed: true })); return; }
+          try { ws.send(JSON.stringify({ type: 'remote.status', installed: true, ...JSON.parse(stdout) })); }
+          catch { ws.send(JSON.stringify({ type: 'remote.status', installed: true })); }
+        });
+        break;
+      }
+
+      case 'remote.pair': {
+        require('child_process').execFile('clideck-remote', ['pair', '--json'], { timeout: 15000 }, (err, stdout) => {
+          if (err) { ws.send(JSON.stringify({ type: 'remote.error', error: err.message })); return; }
+          try { ws.send(JSON.stringify({ type: 'remote.paired', ...JSON.parse(stdout) })); }
+          catch { ws.send(JSON.stringify({ type: 'remote.error', error: 'Invalid response from clideck-remote' })); }
+        });
+        break;
+      }
+
+      case 'remote.unpair': {
+        require('child_process').execFile('clideck-remote', ['unpair', '--json'], { timeout: 5000 }, (err) => {
+          if (err) {
+            ws.send(JSON.stringify({ type: 'remote.error', error: err.message }));
+          } else {
+            sessions.broadcast({ type: 'remote.unpaired' });
+          }
+        });
+        break;
+      }
+
+      case 'remote.getHistory': {
+        const turns = transcript.getScreenTurns(msg.id, sessions.getSessions().get(msg.id)?.presetId)
+          || transcript.getLastTurns(msg.id, msg.limit || 50);
+        ws.send(JSON.stringify({ type: 'remote.history', id: msg.id, turns: turns || [] }));
+        break;
+      }
+
+      case 'remote.install': {
+        const proc = require('child_process').spawn('npm', ['install', '-g', 'clideck-remote'], {
+          shell: true, stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        proc.stdout.on('data', d => ws.send(JSON.stringify({ type: 'remote.install.progress', text: d.toString() })));
+        proc.stderr.on('data', d => ws.send(JSON.stringify({ type: 'remote.install.progress', text: d.toString() })));
+        proc.on('close', code => ws.send(JSON.stringify({ type: 'remote.install.done', success: code === 0 })));
+        break;
+      }
 
       default:
         if (msg.type?.startsWith('plugin.')) plugins.handleMessage(msg);
@@ -256,14 +332,13 @@ function applyTelemetryConfig(preset) {
     }
 
     if (preset.presetId === 'opencode') {
-      const pluginDir = join(home, '.config', 'opencode', 'plugins');
       const src = join(__dirname, 'opencode-plugin', 'clideck-bridge.js');
-      mkdirSync(pluginDir, { recursive: true });
-      copyFileSync(src, join(pluginDir, 'clideck-bridge.js'));
+      mkdirSync(opencodePluginDir, { recursive: true });
+      copyFileSync(src, join(opencodePluginDir, 'clideck-bridge.js'));
       // Remove old termix-bridge.js if present
-      const old = join(pluginDir, 'termix-bridge.js');
+      const old = join(opencodePluginDir, 'termix-bridge.js');
       if (existsSync(old)) try { unlinkSync(old); } catch {}
-      return { success: true, message: 'Installed bridge plugin to ~/.config/opencode/plugins/' };
+      return { success: true, message: `Installed bridge plugin to ${opencodePluginDir}` };
     }
 
     return { success: false, message: `No auto-setup for ${preset.presetId}` };
@@ -297,9 +372,8 @@ function removeTelemetryConfig(preset) {
     }
 
     if (preset.presetId === 'opencode') {
-      const dir = join(home, '.config', 'opencode', 'plugins');
-      try { unlinkSync(join(dir, 'clideck-bridge.js')); } catch {}
-      try { unlinkSync(join(dir, 'termix-bridge.js')); } catch {}
+      try { unlinkSync(join(opencodePluginDir, 'clideck-bridge.js')); } catch {}
+      try { unlinkSync(join(opencodePluginDir, 'termix-bridge.js')); } catch {}
       return { success: true, message: 'Removed bridge plugin' };
     }
 

@@ -43,6 +43,11 @@ Small PRs get reviewed faster. If your diff is over 300 lines, consider splittin
 
 If you've forked CliDeck and built something — a new agent integration, a workflow improvement, a plugin — open a Discussion in **Show & Tell**. The best fork features get upstreamed.
 
+## Licensing of contributions
+
+By submitting a contribution that is accepted into the repository, you agree
+that it will be licensed under the MIT License.
+
 ## Conduct
 
 Be constructive. Review comments are about the code, not the person. If a PR is rejected, the reason will be explained.
