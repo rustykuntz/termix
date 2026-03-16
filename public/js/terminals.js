@@ -340,24 +340,26 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
 
   // [SCREEN-CAPTURE] extract terminal buffer when BOTH idle AND render-silent (2s)
   // Decoupled from status: telemetry knows when agent is done, onRender knows when terminal is done
+  const _telemetryOnly = cmd?.presetId === 'claude-code' || cmd?.presetId === 'codex' || cmd?.presetId === 'gemini-cli';
   let _screenTimer = null, _renderSilent = false;
   function _tryScreenCapture() {
     const entry = state.terms.get(id);
-    if (!entry?.pendingScreenCapture || !_renderSilent || !entry.term) return;
+    if (!entry?.pendingScreenCapture || (!_renderSilent && !_telemetryOnly) || !entry.term) return;
     entry.pendingScreenCapture = false;
     const buf = entry.term.buffer.active;
     const lines = [];
     for (let i = 0; i < buf.length; i++) { const line = buf.getLine(i); if (line) lines.push(line.translateToString(true)); }
     send({ type: 'terminal.buffer', id, lines });
   }
+  let _idleTimer = null, _workTimer = null, _lastTyping = 0, _lastRender = 0;
+  term.onData(() => { _lastTyping = Date.now(); });
   term.onRender(() => {
+    _lastRender = Date.now();
     _renderSilent = false;
     clearTimeout(_screenTimer);
     _screenTimer = setTimeout(() => { _renderSilent = true; _tryScreenCapture(); }, 2000);
   });
-  let _idleTimer = null, _workTimer = null, _lastTyping = 0;
-  term.onData(() => { _lastTyping = Date.now(); });
-  term.onWriteParsed(() => { if (Date.now() - _lastTyping < 500) return; const entry = state.terms.get(id); if (entry) entry.lastRenderAt = Date.now(); if (!_workTimer) _workTimer = setTimeout(() => { _workTimer = null; setStatus(id, true); }, 1000); clearTimeout(_idleTimer); _idleTimer = setTimeout(() => { clearTimeout(_workTimer); _workTimer = null; setStatus(id, false); send({ type: 'session.statusReport', id, working: false }); }, 1500); });
+  term.onWriteParsed(() => { if (Date.now() - _lastTyping < 500) return; const entry = state.terms.get(id); if (entry) entry.lastRenderAt = Date.now(); if (_telemetryOnly) return; if (!_workTimer) _workTimer = setTimeout(() => { _workTimer = null; if (Date.now() - _lastRender < 500) setStatus(id, true); }, 1500); clearTimeout(_idleTimer); _idleTimer = setTimeout(() => { clearTimeout(_workTimer); _workTimer = null; setStatus(id, false); send({ type: 'session.statusReport', id, working: false }); }, 1500); });
 
   // Expose capture function so setStatus can trigger it when idle arrives after render silence
   setTimeout(() => { const e = state.terms.get(id); if (e) e.tryScreenCapture = _tryScreenCapture; }, 0);

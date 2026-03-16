@@ -10,6 +10,7 @@ const inputBuf = {};
 const outputBuf = {};
 const cache = {};
 const prefixes = {};
+const userTexts = {}; // sessionId → [text, ...] — user prompts for parser matching
 let broadcast = null;
 let notifyPlugin = null;
 
@@ -71,7 +72,7 @@ function trackInput(id, data) {
     }
     if (ch === '\r' || ch === '\n') {
       const line = buf.text.trim();
-      if (line) store(id, 'user', line);
+      if (line) { store(id, 'user', line); if (!userTexts[id]) userTexts[id] = []; userTexts[id].push(line); }
       buf.text = '';
     } else if (ch === '\x7f' || ch === '\x08') {
       const chars = Array.from(buf.text);
@@ -127,14 +128,21 @@ function getScreen(id) {
 
 // Per-agent screen parsers. Each returns [{role, text}] from .screen content.
 const agentParsers = {
-  'claude-code': (lines) => {
+  'claude-code': (lines, id) => {
+    const known = userTexts[id]?.length ? new Set(userTexts[id]) : null;
     const turns = [];
     let current = null;
     for (const line of lines) {
-      const m = line.match(/^(?:[│ ]\s*)?([❯›]|[⏺•●])\s(.*)$/);
-      if (m) {
+      const agent = line.match(/^(?:[│ ]\s*)?[⏺•●]\s(.*)$/);
+      if (agent) {
         if (current) { current.text = current.text.replace(/\n+$/, ''); turns.push(current); }
-        current = { role: m[1] === '❯' || m[1] === '›' ? 'user' : 'agent', text: m[2] };
+        current = { role: 'agent', text: agent[1] };
+        continue;
+      }
+      const userM = line.match(/^(?:[│ ]\s*)?[❯›]\s(.*)$/);
+      if (userM && (known ? known.has(userM[1].trim()) : true)) {
+        if (current) { current.text = current.text.replace(/\n+$/, ''); turns.push(current); }
+        current = { role: 'user', text: userM[1] };
         continue;
       }
       if (!current) continue;
@@ -146,14 +154,21 @@ const agentParsers = {
     if (current) { current.text = current.text.replace(/\n+$/, ''); turns.push(current); }
     return turns.length >= 2 ? turns : null;
   },
-  'codex': (lines) => {
+  'codex': (lines, id) => {
+    const known = userTexts[id]?.length ? new Set(userTexts[id]) : null;
     const turns = [];
     let current = null;
     for (const line of lines) {
-      const m = line.match(/^(?:│\s*)?([›•])\s(.*)$/);
-      if (m) {
+      const agent = line.match(/^(?:│\s*)?•\s(.*)$/);
+      if (agent) {
         if (current) { current.text = current.text.replace(/\n+$/, ''); turns.push(current); }
-        current = { role: m[1] === '›' ? 'user' : 'agent', text: m[2] };
+        current = { role: 'agent', text: agent[1] };
+        continue;
+      }
+      const userM = line.match(/^(?:│\s*)?›\s(.*)$/);
+      if (userM && (known ? known.has(userM[1].trim()) : true)) {
+        if (current) { current.text = current.text.replace(/\n+$/, ''); turns.push(current); }
+        current = { role: 'user', text: userM[1] };
         continue;
       }
       if (!current) continue;
@@ -165,7 +180,8 @@ const agentParsers = {
     if (current) { current.text = current.text.replace(/\n+$/, ''); turns.push(current); }
     return turns.length >= 2 ? turns : null;
   },
-  'gemini-cli': (lines) => {
+  'gemini-cli': (lines, id) => {
+    const known = userTexts[id]?.length ? new Set(userTexts[id]) : null;
     const geminiChrome = t => {
       const s = t.trim();
       return /^shift\+tab to accept/i.test(s)
@@ -180,11 +196,12 @@ const agentParsers = {
     let current = null;
     for (const line of lines) {
       if (geminiChrome(line)) continue;
-      const isUser = line.startsWith(' > ');
       const isAgent = line.startsWith('✦ ');
+      const userM = line.startsWith(' > ') ? line.slice(3) : null;
+      const isUser = userM && (known ? known.has(userM.trim()) : true);
       if (isUser || isAgent) {
         if (current) { current.text = current.text.replace(/\n+$/, ''); turns.push(current); }
-        current = { role: isUser ? 'user' : 'agent', text: isUser ? line.slice(3) : line.slice(2) };
+        current = { role: isUser ? 'user' : 'agent', text: isUser ? userM : line.slice(2) };
         continue;
       }
       if (!current) continue;
@@ -243,7 +260,7 @@ function getScreenTurns(id, agent) {
   if (!screen) return null;
   const lines = screen.split('\n');
   const parser = agentParsers[agent];
-  const turns = parser ? parser(lines) : anchorParse(id, lines);
+  const turns = parser ? parser(lines, id) : anchorParse(id, lines);
   // Drop trailing user turn — it's the empty prompt or unanswered input
   if (turns?.length && turns[turns.length - 1].role === 'user') turns.pop();
   return turns?.length >= 2 ? turns : null;
@@ -281,6 +298,7 @@ function clear(id) {
   }
   delete cache[id];
   delete prefixes[id];
+  delete userTexts[id];
   try { unlinkSync(join(DIR, `${id}.screen`)); } catch {}
 }
 
