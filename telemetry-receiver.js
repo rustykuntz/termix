@@ -127,11 +127,13 @@ function cancelPendingSetup(sessionId) {
 // Agent working indicators in PTY output.
 const CLAUDE_WORKING_RE = /[✳✽✢✻·]|Working…|thinking/;
 const CODEX_WORKING_RE = /Working|•/;
+const GEMINI_WORKING_RE = /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/;
 
 function startPendingIdle(id, agent) {
   if (pendingIdle.has(id)) return; // already monitoring
   const isClaude = agent === 'claude-code';
   const isCodex = agent === 'codex_cli_rs';
+  const isGemini = agent === 'gemini-cli';
   let isIdle = false;
   let activeStart = 0;
   const check = setInterval(() => {
@@ -145,6 +147,7 @@ function startPendingIdle(id, agent) {
       const chunk = ioActivity.lastChunk(id);
       if (isClaude && CLAUDE_WORKING_RE.test(chunk)) silent = false;
       if (isCodex && CODEX_WORKING_RE.test(chunk)) silent = false;
+      if (isGemini && GEMINI_WORKING_RE.test(chunk)) silent = false;
     }
     if (silent && !isIdle) {
       isIdle = true;
