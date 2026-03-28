@@ -26,7 +26,7 @@ npx clideck
 
 Open [http://localhost:4000](http://localhost:4000). Click **+**, pick an agent and optionally a project and role, start working.
 
-New users get 3 built-in demo roles (Programmer, Reviewer, Product Manager) and 3 starter prompts in the prompt library to get going quickly.
+New users get 3 built-in roles (Programmer, Reviewer, Product Manager) and 3 starter prompts in the prompt library.
 
 Or install globally:
 
@@ -38,7 +38,7 @@ clideck
 ## What You Get
 
 - **Roles** — define reusable agent identities (Programmer, Reviewer, PM) and assign them when creating sessions. Instructions are injected into the agent automatically.
-- **Autopilot** — project-level workflow routing. Watches your role-assigned agents, waits for them to finish, forwards output to the next specialist. Fingerprints each output, tracks handoff history, and guards against repeat loops. Works with any LLM provider (Anthropic, OpenAI, Google, Groq, xAI, Mistral, and more). Notifies you when work is complete or blocked.
+- **Autopilot** — project-level workflow routing. Watches your role-assigned agents, waits for them to finish, forwards output to the next specialist. Fingerprints each output, tracks handoff history, and guards against repeat loops. Supports 8 LLM providers (Anthropic, OpenAI, Google, Groq, xAI, Mistral, OpenRouter, Cerebras). Notifies you when work is complete or blocked.
 - **Mobile access** — check on your agents from your phone with a QR scan. E2E encrypted.
 - **Live working/idle status** — see which agent is thinking and which is waiting for you, without checking each terminal
 - **Session resume** — close clideck, reopen it tomorrow, pick up where you left off
