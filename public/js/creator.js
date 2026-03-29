@@ -35,25 +35,35 @@ function isPresetMissing(p) {
   return cmd.command === p.command;
 }
 
+// True if preset binary exists but telemetry/hooks are not configured yet
+function isPresetUnpatched(p) {
+  if (p.available === false || !p.telemetryAutoSetup) return false;
+  const cmd = findCommandForPreset(p);
+  return !cmd || !cmd.telemetryEnabled;
+}
+
 function renderPresetButtons() {
   return sortedPresets().map(p => {
-    const missing = isPresetMissing(p);
-    if (missing) {
+    if (isPresetMissing(p)) {
       return `
       <div class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-left text-slate-500">
         <span class="opacity-40">${agentIcon(p.icon, 24)}</span>
-        <span class="flex-1 min-w-0">
-          <span>${esc(p.name)}</span>
-        </span>
+        <span class="flex-1 min-w-0">${esc(p.name)}</span>
         <button class="install-btn px-2.5 py-1 text-[11px] font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded-md transition-colors" data-preset="${p.presetId}">Add</button>
+      </div>`;
+    }
+    if (isPresetUnpatched(p)) {
+      return `
+      <div class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-left text-slate-500">
+        <span class="opacity-40">${agentIcon(p.icon, 24)}</span>
+        <span class="flex-1 min-w-0">${esc(p.name)}</span>
+        <button class="setup-btn px-2.5 py-1 text-[11px] font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-md transition-colors" data-preset="${p.presetId}">Setup</button>
       </div>`;
     }
     return `
       <button class="preset-btn w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-slate-700/70 text-sm transition-colors text-left text-slate-300" data-preset="${p.presetId}">
         <span>${agentIcon(p.icon, 24)}</span>
-        <span class="flex-1 min-w-0">
-          <span>${esc(p.name)}</span>
-        </span>
+        <span class="flex-1 min-w-0">${esc(p.name)}</span>
       </button>`;
   }).join('');
 }
@@ -284,6 +294,19 @@ export function openCreator() {
     if (installBtn) {
       const preset = state.presets.find(p => p.presetId === installBtn.dataset.preset);
       if (preset?.installCmd) showInstallToast(preset);
+      return;
+    }
+    const setupBtn = e.target.closest('.setup-btn');
+    if (setupBtn) {
+      const preset = state.presets.find(p => p.presetId === setupBtn.dataset.preset);
+      if (!preset) return;
+      let cmd = findCommandForPreset(preset);
+      if (!cmd) {
+        cmd = { id: crypto.randomUUID(), presetId: preset.presetId, label: preset.name, icon: preset.icon, command: preset.command, enabled: true, defaultPath: '', isAgent: preset.isAgent, canResume: preset.canResume, resumeCommand: preset.resumeCommand, sessionIdPattern: preset.sessionIdPattern, outputMarker: preset.outputMarker || null, telemetryEnabled: false, telemetryStatus: null, bridge: preset.bridge };
+        state.cfg.commands.push(cmd);
+        send({ type: 'config.update', config: state.cfg });
+      }
+      document.dispatchEvent(new CustomEvent('clideck:setup', { detail: { commandId: cmd.id } }));
       return;
     }
     const btn = e.target.closest('.preset-btn');

@@ -39,6 +39,7 @@ function connect() {
         renderSettings();
         renderPrompts();
         renderRoles();
+        refreshCreator();
         for (const [, entry] of state.terms) applyTheme(entry.term, entry.themeId);
         break;
       case 'themes':
@@ -193,16 +194,15 @@ function connect() {
         const actionsEl = toast.querySelector('.setup-actions');
         if (msg.success) {
           const sid = toast.dataset.sessionId;
-          const cmdId = toast.dataset.commandId;
           actionsEl.innerHTML = `
             <div class="flex-1 flex items-center gap-1.5 text-xs text-emerald-400">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
               Configured
             </div>
-            <button class="restart-btn px-3 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">Restart Session</button>
+            ${sid ? `<button class="restart-btn px-3 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">Restart Session</button>` : ''}
             <button class="dismiss-btn px-3 py-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">Dismiss</button>`;
           actionsEl.querySelector('.dismiss-btn').onclick = () => toast.remove();
-          actionsEl.querySelector('.restart-btn').onclick = () => {
+          if (sid) actionsEl.querySelector('.restart-btn').onclick = () => {
             const entry = state.terms.get(sid);
             send({ type: 'session.restart', id: sid, themeId: entry?.themeId, cols: entry?.term?.cols, rows: entry?.term?.rows });
             toast.remove();
@@ -398,6 +398,7 @@ document.querySelectorAll('.filter-tab').forEach(btn => {
 
 // Telemetry setup notification — shown once per agent type
 const shownSetup = new Set();
+document.addEventListener('clideck:setup', (e) => showTelemetrySetup(e.detail.commandId, null));
 function showTelemetrySetup(commandId, sessionId) {
   const cmd = state.cfg.commands.find(c => c.id === commandId);
   if (!cmd) return;
