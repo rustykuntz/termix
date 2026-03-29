@@ -1,5 +1,5 @@
 import { state, send } from './state.js';
-import { esc, binName } from './utils.js';
+import { esc, binName, resolveIconPath } from './utils.js';
 import { addTerminal, removeTerminal, select, startRename, startProjectRename, setSessionTheme, openMenu, closeMenu, setStatus, updateMuteIndicator, updatePreview, markUnread, applyFilter, setTab, renderResumable, regroupSessions, toggleProjectCollapse, setSessionProject, estimateSize, restartComplete, positionMenu, addPill, updatePill, removePill, appendPillLog, setPillLogs, closePillLog } from './terminals.js';
 import { renderSettings, updateVersionFooter } from './settings.js';
 import { openCreator, closeCreator, refreshCreator } from './creator.js';
@@ -82,6 +82,17 @@ function connect() {
       case 'session.status':
         setStatus(msg.id, msg.working);
         break;
+      // Server requests screen capture (e.g. after PermissionRequest hook)
+      case 'screen.capture': {
+        const ce = state.terms.get(msg.id);
+        if (ce?.term) {
+          const buf = ce.term.buffer.active;
+          const lines = [];
+          for (let i = 0; i < buf.length; i++) { const line = buf.getLine(i); if (line) lines.push(line.translateToString(true)); }
+          send({ type: 'terminal.buffer', id: msg.id, lines });
+        }
+        break;
+      }
       // Bridge preview text (OpenCode plugin)
       case 'session.preview': {
         const pe = state.terms.get(msg.id);
@@ -403,7 +414,7 @@ function showTelemetrySetup(commandId, sessionId) {
   const [desc, ...codeParts] = setupText.split('\n\n');
   const code = codeParts.join('\n\n');
   const auto = preset.telemetryAutoSetup;
-  const iconSrc = preset.icon?.startsWith('/') ? preset.icon : null;
+  const iconSrc = preset.icon?.startsWith('/') ? resolveIconPath(preset.icon) : null;
   const title = preset.bridge ? 'Bridge Plugin' : 'Status Tracking';
 
   const toast = document.createElement('div');

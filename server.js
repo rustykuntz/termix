@@ -88,6 +88,63 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Codex notify hook endpoint — deterministic turn-complete signal
+  if (req.method === 'POST' && req.url === '/hook/codex/stop') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; if (body.length > 1e5) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body);
+        const threadId = payload['thread-id'];
+        if (threadId) {
+          const allSessions = sessions.getSessions();
+          for (const [id, s] of allSessions) {
+            if (s.sessionToken === threadId) {
+              console.log(`[codex] hook stop session=${id.slice(0,8)} thread=${threadId.slice(0,8)}`);
+              sessions.broadcast({ type: 'session.status', id, working: false, source: 'hook' });
+              break;
+            }
+          }
+        }
+      } catch {}
+      res.writeHead(200).end('{}');
+    });
+    return;
+  }
+
+  // Claude Code hook endpoints — deterministic start/stop/idle signals
+  if (req.method === 'POST' && req.url.startsWith('/hook/claude/')) {
+    let body = '';
+    req.on('data', chunk => { body += chunk; if (body.length > 1e5) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body);
+        const route = req.url.slice('/hook/claude/'.length);
+        const sessionId = payload.session_id;
+        // console.log(`[claude] hook ${route} session=${sessionId?.slice(0,8) || '?'}`);
+        if (sessionId) {
+          const allSessions = sessions.getSessions();
+          let clideckId = null;
+          for (const [id, s] of allSessions) {
+            if (s.sessionToken === sessionId) { clideckId = id; break; }
+          }
+          if (clideckId) {
+            if (route === 'start') {
+              sessions.broadcast({ type: 'session.status', id: clideckId, working: true, source: 'hook' });
+            } else if (route === 'stop' || route === 'idle') {
+              sessions.broadcast({ type: 'session.status', id: clideckId, working: false, source: 'hook' });
+            } else if (route === 'menu') {
+              // PreToolUse: trigger screen capture — detectMenu will set idle if a choice menu is visible
+              setTimeout(() => sessions.broadcast({ type: 'screen.capture', id: clideckId }), 500);
+            }
+          }
+        }
+      } catch {}
+      res.writeHead(200).end('{}');
+    });
+    return;
+  }
+
   // OpenCode plugin bridge events
   if (req.method === 'POST' && req.url === '/opencode-events') {
     let body = '';
@@ -125,7 +182,18 @@ const server = http.createServer((req, res) => {
   } catch { res.writeHead(500).end(); }
 });
 
-const wss = new WebSocketServer({ server });
+const allowedOrigins = new Set([
+  `http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`,
+  `http://[::1]:${PORT}`, `http://${HOST}:${PORT}`,
+]);
+const wss = new WebSocketServer({
+  server,
+  verifyClient: ({ req }) => {
+    const origin = req.headers.origin;
+    if (!origin) return true;            // non-browser clients (curl, etc.)
+    return allowedOrigins.has(origin);
+  },
+});
 wss.on('connection', onConnection);
 
 const activity = require('./activity');

@@ -4,8 +4,10 @@
 
 const ioActivity = require('./activity');
 const activity = new Map(); // sessionId → has received events
+const lastEvent = new Map(); // sessionId → last OTEL event name (+ kind)
 const pendingSetup = new Map(); // sessionId → timer (waiting for first event)
 const pendingIdle = new Map(); // sessionId → timer (PTY silence → idle)
+const codexMenuPoll = new Map(); // sessionId → interval (polling for menu after response.completed)
 const escPendingIdle = new Map(); // sessionId → timer (Esc interrupt → confirm idle after output silence)
 const escSuppressUntil = new Map(); // sessionId → ts (briefly ignore telemetry reassertions after Esc)
 let broadcastFn = null;
@@ -74,18 +76,40 @@ function handleLogs(req, res) {
 
         // Debug telemetry logs — uncomment as needed, do not delete
         // if (serviceName === 'claude-code' && eventName) console.log(`[telemetry:claude] ${eventName}`);
-        // if (serviceName === 'codex_cli_rs' && eventName) console.log(`[telemetry:codex] ${eventName} session=${resolvedId.slice(0,8)} working=${sessionsFn?.()?.get(resolvedId)?.working}`);
+        // if (serviceName === 'codex_cli_rs' && eventName) console.log(`[telemetry:codex] ${eventName} ${attrs['event.kind'] ? 'kind=' + attrs['event.kind'] : ''} ${attrs['tool'] ? 'tool=' + attrs['tool'] : ''} session=${resolvedId.slice(0,8)}`);
         // if (serviceName === 'gemini-cli' && eventName) console.log(`[telemetry:gemini] ${eventName}`);
 
-        // Status: user_prompt → working + start PTY silence monitor for idle
-        const startEvents = new Set(['user_prompt', 'gemini_cli.user_prompt', 'codex.user_prompt']);
+        // Track last event per session (used by menu detection validation)
+        if (eventName) lastEvent.set(resolvedId, eventName + (attrs['event.kind'] ? ':' + attrs['event.kind'] : ''));
+
+        // Status: user_prompt → working
+        // Claude uses hooks; Codex uses notify hook; Gemini uses PTY heuristic
+        const startEvents = new Set(['gemini_cli.user_prompt', 'codex.user_prompt']);
         if (startEvents.has(eventName)) {
           cancelPendingIdle(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
-          startPendingIdle(resolvedId, serviceName);
+          // Gemini uses PTY silence heuristic for idle; Codex idle comes from notify hook
+          if (serviceName !== 'codex_cli_rs') startPendingIdle(resolvedId, serviceName);
         }
 
-        const agentSessionId = attrs['session.id'] || attrs['conversation.id'];
+        // Codex: response.completed → poll for menu until found or timeout
+        if (eventName === 'codex.sse_event' && attrs['event.kind'] === 'response.completed') {
+          startCodexMenuPoll(resolvedId);
+        }
+        // Codex: tool_decision → user approved, cancel menu poll, back to working
+        if (eventName === 'codex.tool_decision') {
+          cancelCodexMenuPoll(resolvedId);
+          broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
+        }
+        // Codex: user_prompt or next sse_event cancels menu poll
+        if ((eventName === 'codex.user_prompt' || (eventName === 'codex.sse_event' && attrs['event.kind'] !== 'response.completed'))) {
+          cancelCodexMenuPoll(resolvedId);
+        }
+
+        // Codex: use conversation.id (maps to thread-id in notify hook)
+        const agentSessionId = serviceName === 'codex_cli_rs'
+          ? attrs['conversation.id']
+          : (attrs['session.id'] || attrs['conversation.id']);
         if (agentSessionId && sess) {
           // Prefer interactive session ID (Gemini sends non-interactive init events first)
           const dominated = sess.sessionToken && attrs['interactive'] === true;
@@ -124,16 +148,12 @@ function cancelPendingSetup(sessionId) {
 }
 
 // PTY activity monitor: 2s silent → idle, 2s active or user_prompt → working.
+// Used by Gemini only — Claude uses hooks, Codex uses sse_event completion.
 // Agent working indicators in PTY output.
-const CLAUDE_WORKING_RE = /[✳✽✢✻·]|Working…|thinking/;
-const CODEX_WORKING_RE = /Working|•/;
 const GEMINI_WORKING_RE = /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/;
 
 function startPendingIdle(id, agent) {
   if (pendingIdle.has(id)) return; // already monitoring
-  const isClaude = agent === 'claude-code';
-  const isCodex = agent === 'codex_cli_rs';
-  const isGemini = agent === 'gemini-cli';
   let isIdle = false;
   let activeStart = 0;
   const check = setInterval(() => {
@@ -145,9 +165,7 @@ function startPendingIdle(id, agent) {
     // Agent override: if recent output has spinner/working chars, not silent
     if (silent && (Date.now() - lastOut) < 2000) {
       const chunk = ioActivity.lastChunk(id);
-      if (isClaude && CLAUDE_WORKING_RE.test(chunk)) silent = false;
-      if (isCodex && CODEX_WORKING_RE.test(chunk)) silent = false;
-      if (isGemini && GEMINI_WORKING_RE.test(chunk)) silent = false;
+      if (GEMINI_WORKING_RE.test(chunk)) silent = false;
     }
     if (silent && !isIdle) {
       isIdle = true;
@@ -169,6 +187,22 @@ function startPendingIdle(id, agent) {
 function cancelPendingIdle(id) {
   const timer = pendingIdle.get(id);
   if (timer) { clearInterval(timer); pendingIdle.delete(id); }
+}
+
+// Codex: after response.completed, poll screen capture every 500ms for up to 3s
+function startCodexMenuPoll(id) {
+  cancelCodexMenuPoll(id);
+  const started = Date.now();
+  const poll = setInterval(() => {
+    if (Date.now() - started > 3000) { cancelCodexMenuPoll(id); return; }
+    broadcastFn?.({ type: 'screen.capture', id });
+  }, 500);
+  codexMenuPoll.set(id, poll);
+}
+
+function cancelCodexMenuPoll(id) {
+  const timer = codexMenuPoll.get(id);
+  if (timer) { clearInterval(timer); codexMenuPoll.delete(id); }
 }
 
 function startEscIdle(id) {
@@ -202,16 +236,20 @@ function cancelEscIdle(id) {
 
 function clear(id) {
   activity.delete(id);
+  lastEvent.delete(id);
   cancelPendingIdle(id);
+  cancelCodexMenuPoll(id);
   cancelEscIdle(id);
   escSuppressUntil.delete(id);
   const pending = pendingSetup.get(id);
   if (pending) { clearTimeout(pending.timer); pendingSetup.delete(id); }
 }
 
+function getLastEvent(id) { return lastEvent.get(id) || ''; }
+
 // Returns true if we've received telemetry events for this session
 function hasEvents(id) {
   return activity.has(id);
 }
 
-module.exports = { init, handleLogs, clear, hasEvents, watchSession, startPendingIdle, startEscIdle };
+module.exports = { init, handleLogs, clear, hasEvents, getLastEvent, cancelCodexMenuPoll, watchSession, startPendingIdle, startEscIdle };

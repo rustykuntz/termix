@@ -110,40 +110,14 @@ function telemetryPreset(cmd) {
 function integrationSection(c) {
   const preset = telemetryPreset(c);
   if (!preset) return '';
-  const isClaude = preset.presetId === 'claude-code';
-  const isBridge = !!preset.bridge;
-  if (!preset.telemetryEnv && !isBridge) return '';
-
-  const enabled = isClaude || !!c.telemetryEnabled;
-  const title = 'CliDeck integration';
-  const subtitle = '(live status &amp; resume)';
-
-  if (isClaude) {
-    return `
-    <div class="mt-3 pt-3 border-t border-slate-700/50">
-      <div class="flex items-center gap-2 text-sm text-slate-300">
-        <span style="width:8px;height:8px;border-radius:50%;background:#34d399;display:inline-block"></span>
-        ${title} <span class="text-xs text-slate-500">${subtitle}</span>
-      </div>
-      <div class="mt-1 text-[11px] text-slate-500">Built-in</div>
-    </div>`;
-  }
-
-  const detail = isBridge ? 'Bridge plugin' : esc(preset.telemetryConfigPath || '');
-  const toggleBg = enabled ? '#3b82f6' : '#475569';
-  const knobX = enabled ? '18' : '2';
-
+  if (!preset.telemetryAutoSetup && !preset.bridge) return '';
+  const configured = !!c.telemetryEnabled;
+  const detail = configured
+    ? `<span class="text-emerald-400/80">Configured</span> &mdash; ${esc(preset.telemetryConfigPath || '')}`
+    : `<span class="text-slate-500">Not configured</span> &mdash; enable agent to set up`;
   return `
     <div class="mt-3 pt-3 border-t border-slate-700/50">
-      <label class="flex items-center justify-between text-sm text-slate-300 cursor-pointer select-none">
-        <span>${title} <span class="text-xs text-slate-500">${subtitle}</span></span>
-        <span style="position:relative;display:inline-block;width:36px;height:20px">
-          <input type="checkbox" ${enabled ? 'checked' : ''} class="agent-telemetry-toggle" data-preset="${esc(preset.presetId)}" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;margin:0;z-index:1">
-          <span style="position:absolute;inset:0;border-radius:10px;background:${toggleBg};transition:background .2s"></span>
-          <span style="position:absolute;top:2px;left:${knobX}px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s"></span>
-        </span>
-      </label>
-      <div class="mt-1 text-[11px] text-slate-500" ${!isBridge ? 'style="font-family:monospace"' : ''}>${detail}</div>
+      <div class="text-[11px] text-slate-500">${detail}</div>
     </div>`;
 }
 
@@ -241,8 +215,8 @@ function openPresetMenu(anchorEl) {
         enabled: true, defaultPath: '', isAgent: p.isAgent, canResume: p.canResume,
         resumeCommand: p.resumeCommand, sessionIdPattern: p.sessionIdPattern,
         outputMarker: p.outputMarker || null,
-        telemetryEnabled: p.presetId === 'claude-code',
-        telemetryStatus: p.presetId === 'claude-code' ? { ok: true } : null,
+        telemetryEnabled: false,
+        telemetryStatus: null,
         bridge: p.bridge,
       });
     }
@@ -294,10 +268,27 @@ agentList.addEventListener('change', (e) => {
     const card = e.target.closest('.agent-card');
     card.querySelector('.agent-resume-fields').classList.toggle('hidden', !e.target.checked);
   }
-  if (e.target.classList.contains('agent-telemetry-toggle')) {
-    const presetId = e.target.dataset.preset;
-    send({ type: 'telemetry.configure', presetId, enable: e.target.checked });
-    return; // config broadcast from server will re-render
+  // When enabling an agent that needs setup, trigger auto-setup
+  if (e.target.classList.contains('agent-enabled') && e.target.checked) {
+    const idx = +e.target.closest('.agent-card').dataset.idx;
+    const cmd = state.cfg.commands[idx];
+    const preset = telemetryPreset(cmd);
+    if (preset?.telemetryAutoSetup && !cmd.telemetryEnabled) {
+      send({ type: 'telemetry.autosetup', presetId: preset.presetId });
+      return; // config broadcast from server will re-render with enabled + telemetryEnabled
+    }
+  }
+  // When disabling an agent that has setup, remove patches only if no other commands of the same agent are enabled
+  if (e.target.classList.contains('agent-enabled') && !e.target.checked) {
+    const idx = +e.target.closest('.agent-card').dataset.idx;
+    const cmd = state.cfg.commands[idx];
+    const preset = telemetryPreset(cmd);
+    if (preset && cmd.telemetryEnabled) {
+      const othersEnabled = state.cfg.commands.some((c, i) => i !== idx && c.enabled && telemetryPreset(c)?.presetId === preset.presetId);
+      if (!othersEnabled) {
+        send({ type: 'telemetry.configure', presetId: preset.presetId, enable: false });
+      }
+    }
   }
   saveConfig();
 });
@@ -448,7 +439,6 @@ function saveConfig() {
   state.cfg.commands = [...agentCards].map((card, i) => {
     const existing = state.cfg.commands[i] || {};
     const command = card.querySelector('.agent-command').value.trim() || state.cfg.defaultShell;
-    const isClaude = binName(command) === 'claude';
     return {
       id: existing.id || crypto.randomUUID(),
       label: card.querySelector('.agent-name').value.trim() || 'Untitled',
@@ -461,8 +451,8 @@ function saveConfig() {
       resumeCommand: card.querySelector('.agent-resume-cmd')?.value.trim() || null,
       sessionIdPattern: existing.sessionIdPattern || null,
       outputMarker: existing.outputMarker || null,
-      telemetryEnabled: isClaude ? true : (existing.telemetryEnabled || false),
-      telemetryStatus: isClaude ? { ok: true } : (existing.telemetryStatus || null),
+      telemetryEnabled: existing.telemetryEnabled || false,
+      telemetryStatus: existing.telemetryStatus || null,
       bridge: existing.bridge,
     };
   });

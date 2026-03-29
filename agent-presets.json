@@ -10,7 +10,11 @@
     "resumeCommand": "claude --resume {{sessionId}}",
     "sessionIdPattern": "Session ID:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
     "outputMarker": "\u23fa",
-    "telemetryConfigPath": "Built-in (no configuration needed)",
+    "telemetryConfigPath": "~/.claude/settings.json",
+    "telemetrySetup": "Required for working/idle status, Autopilot, notifications, and mobile remote.\n\nCliDeck will add start/stop hooks to ~/.claude/settings.json. Claude will ask for one-time approval on next launch.",
+    "telemetryAutoSetup": {
+      "label": "Patch Claude"
+    },
     "telemetryEnv": {
       "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
       "OTEL_LOGS_EXPORTER": "otlp",

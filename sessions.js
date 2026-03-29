@@ -277,10 +277,16 @@ function input(msg) {
   activity.trackIn(msg.id, data.length);
   transcript.trackInput(msg.id, data);
   sessions.get(msg.id)?.pty.write(data);
-  if (data === '\x1b') {
-    const s = sessions.get(msg.id);
-    // console.log(`[esc] session=${msg.id.slice(0,8)} working=${s?.working}`);
-    if (s?.working) telemetry.startEscIdle(msg.id);
+  const s = sessions.get(msg.id);
+  if (!s) return;
+  // Menu choice selected → back to working (Enter or digit keys only)
+  if (s._menuKey && !s.working && (data === '\r' || /^[1-9]$/.test(data))) {
+    s._menuKey = '';
+    broadcast({ type: 'session.menu', id: msg.id, choices: [] });
+    broadcast({ type: 'session.status', id: msg.id, working: true, source: 'menu-input' });
+  }
+  if (data === '\x1b' && s.working) {
+    telemetry.startEscIdle(msg.id);
   }
 }
 function resize(msg) { sessions.get(msg.id)?.pty.resize(msg.cols, msg.rows); }
@@ -315,15 +321,14 @@ function close(msg, cfg) {
 // Uses resume command if available, otherwise re-launches the original command.
 function restart(msg, ws, cfg) {
   const id = msg.id;
-  console.log('[restart] received', { id, themeId: msg.themeId });
+  // console.log('[restart] received', { id, themeId: msg.themeId });
   const s = sessions.get(id);
-  if (!s) { console.log('[restart] FAIL: session not found'); ws.send(JSON.stringify({ type: 'session.restarted', id, error: 'not found' })); return; }
+  if (!s) { ws.send(JSON.stringify({ type: 'session.restarted', id, error: 'not found' })); return; }
   const cmd = cfg.commands.find(c => c.id === s.commandId);
-  if (!cmd) { console.log('[restart] FAIL: command not found, commandId=', s.commandId); ws.send(JSON.stringify({ type: 'session.restarted', id, error: 'command missing' })); return; }
+  if (!cmd) { ws.send(JSON.stringify({ type: 'session.restarted', id, error: 'command missing' })); return; }
 
   const themeId = msg.themeId || s.themeId;
   const canResume = cmd.canResume && cmd.resumeCommand && s.sessionToken;
-  console.log('[restart] canResume=', canResume, 'token=', s.sessionToken?.slice(0,12), 'cmd=', cmd.command);
 
   let parts;
   if (canResume) {
@@ -331,7 +336,6 @@ function restart(msg, ws, cfg) {
   } else {
     parts = parseCommand(cmd.command);
   }
-  console.log('[restart] parts=', parts);
 
   const savedToken = s.sessionToken;
   const { name, cwd, commandId, projectId } = s;
@@ -341,19 +345,16 @@ function restart(msg, ws, cfg) {
   opencodeBridge.clear(id);
   transcript.clear(id);
 
-  console.log('[restart] killing old pty');
   s.pty.kill();
   sessions.delete(id);
 
-  console.log('[restart] spawning new pty, themeId=', themeId, 'cwd=', cwd);
   const err = spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken, projectId, msg.cols, msg.rows);
   if (err) {
-    console.error('[restart] FAIL spawn:', err.message);
+    console.error('[restart] spawn failed:', err.message);
     broadcast({ type: 'session.restarted', id, error: err.message });
     return;
   }
 
-  console.log('[restart] SUCCESS, broadcasting session.restarted');
   broadcast({ type: 'session.restarted', id, resumed: !!canResume });
 }
 
