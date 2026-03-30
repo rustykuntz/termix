@@ -526,11 +526,12 @@ function setStatus(id, working) {
 
   // Notify on working → idle transition
   if (wasWorking && !working && !entry.muted) {
+    const minWork = state.cfg.notifyMinWork ?? 10;
     const workDuration = (Date.now() - (entry.workStartedAt || 0)) / 1000;
-    const minWork = state.cfg.notifyMinWork || 10;
     if (workDuration >= minWork) {
-      // Sound: plays unless this session is the one you're looking at
-      if (state.cfg.notifySoundEnabled !== false && state.active !== id) {
+      entry.workStartedAt = null;
+      // Sound: all sessions when tab unfocused, all except active when focused
+      if (state.cfg.notifySoundEnabled !== false && (!document.hasFocus() || state.active !== id)) {
         new Audio(`/fx/${(state.cfg.notifySound || 'default-beep')}.mp3`).play().catch(() => {});
       }
       // Browser notification: plays when the CliDeck tab is not focused
@@ -549,7 +550,7 @@ function setStatus(id, working) {
   // Also try immediately — renders may already be silent
   if (wasWorking && !working) { entry.pendingScreenCapture = true; entry.tryScreenCapture?.(); }
 
-  if (working) entry.workStartedAt = Date.now();
+  if (working && !entry.workStartedAt) entry.workStartedAt = Date.now();
 
   const el = document.querySelector(`.group[data-id="${id}"] .session-status`);
   if (!el) return;

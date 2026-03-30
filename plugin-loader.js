@@ -1,5 +1,8 @@
 const { readdirSync, readFileSync, existsSync, mkdirSync, cpSync, rmSync } = require('fs');
 const { join, sep } = require('path');
+const { execFile: _execFile } = require('child_process');
+// Windows needs shell:true for npm (it's npm.cmd, not a binary)
+const npmExec = (args, opts, cb) => _execFile('npm', args, { ...opts, shell: process.platform === 'win32' }, cb);
 const { DATA_DIR } = require('./paths');
 const transcript = require('./transcript');
 
@@ -8,6 +11,7 @@ mkdirSync(PLUGINS_DIR, { recursive: true });
 
 // Seed bundled plugins — copy if missing, update if bundled version is newer
 const BUNDLED_DIR = join(__dirname, 'plugins');
+const updatedBundled = new Set(); // plugins updated during seed — install state must be cleared
 if (existsSync(BUNDLED_DIR)) {
   for (const entry of readdirSync(BUNDLED_DIR, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -22,6 +26,7 @@ if (existsSync(BUNDLED_DIR)) {
         const installedManifest = JSON.parse(readFileSync(installedManifestFile, 'utf8'));
         if (bundledManifest.version !== installedManifest.version) {
           cpSync(join(BUNDLED_DIR, entry.name), target, { recursive: true });
+          if (bundledManifest.install) updatedBundled.add(bundledManifest.id || entry.name);
           console.log(`[plugin] updated ${entry.name} ${installedManifest.version} → ${bundledManifest.version}`);
         }
       } catch {}
@@ -30,6 +35,7 @@ if (existsSync(BUNDLED_DIR)) {
 }
 
 const plugins = new Map();
+const uninstalledPlugins = new Map(); // id → { manifest, dir }
 const inputHooks = [];
 const outputHooks = [];
 const statusHooks = [];
@@ -66,6 +72,57 @@ function removeHooks(pluginId) {
   }
 }
 
+// Check if a plugin with install: "npm" has been installed.
+// Config is the source of truth, but we self-correct if node_modules is missing.
+function isInstalled(dir, manifest) {
+  if (!manifest.install) return true; // no install step declared
+  const cfg = getConfigFn?.();
+  if (!cfg?.pluginInstalled?.[manifest.id]) return false;
+  // Self-correct: config says installed but files are gone
+  if (!existsSync(join(dir, 'node_modules'))) {
+    console.log(`[plugin] ${manifest.name}: node_modules missing, resetting install state`);
+    delete cfg.pluginInstalled[manifest.id];
+    saveConfigFn?.(cfg);
+    return false;
+  }
+  return true;
+}
+
+function readManifest(dir, name) {
+  let manifest = { id: name, name, version: '0.0.0' };
+  const manifestFile = existsSync(join(dir, 'clideck-plugin.json')) ? join(dir, 'clideck-plugin.json') : join(dir, 'termix-plugin.json');
+  if (existsSync(manifestFile)) {
+    try { manifest = { ...manifest, ...JSON.parse(readFileSync(manifestFile, 'utf8')) }; }
+    catch (e) { console.error(`[plugin:${name}] bad manifest: ${e.message}`); return null; }
+  }
+  if (manifest.settings != null) {
+    if (!Array.isArray(manifest.settings)) {
+      console.error(`[plugin:${name}] manifest.settings must be an array, ignoring`);
+      manifest.settings = [];
+    } else {
+      manifest.settings = manifest.settings.filter(s =>
+        s && typeof s === 'object' && typeof s.key === 'string' && s.key
+      );
+    }
+  }
+  return manifest;
+}
+
+function loadPlugin(manifest, dir) {
+  if (plugins.has(manifest.id)) return;
+  const state = { manifest, dir, shutdownFns: [], actions: [], dynamicOptions: {} };
+  plugins.set(manifest.id, state);
+  try {
+    const mod = require(join(dir, 'index.js'));
+    if (typeof mod.init === 'function') mod.init(buildApi(manifest.id, dir, state));
+    console.log(`[plugin] ${manifest.name} v${manifest.version}`);
+  } catch (e) {
+    console.error(`[plugin:${manifest.id}] init failed: ${e.message}`);
+    removeHooks(manifest.id);
+    plugins.delete(manifest.id);
+  }
+}
+
 function init(broadcast, getSessions, getConfig, saveConfig, sessionInput, createProgrammatic, closeSession) {
   broadcastFn = broadcast;
   sessionsFn = getSessions;
@@ -75,47 +132,40 @@ function init(broadcast, getSessions, getConfig, saveConfig, sessionInput, creat
   createSessionFn = createProgrammatic;
   closeSessionFn = closeSession;
 
+  // Clear install state for bundled plugins that were updated during seed
+  if (updatedBundled.size) {
+    const cfg = getConfig();
+    if (cfg?.pluginInstalled) {
+      for (const id of updatedBundled) {
+        if (cfg.pluginInstalled[id]) {
+          delete cfg.pluginInstalled[id];
+          console.log(`[plugin] cleared install state for updated ${id}`);
+        }
+      }
+      saveConfig(cfg);
+    }
+  }
+
   for (const entry of readdirSync(PLUGINS_DIR, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const dir = join(PLUGINS_DIR, entry.name);
-    const entryFile = join(dir, 'index.js');
-    if (!existsSync(entryFile)) continue;
+    if (!existsSync(join(dir, 'index.js'))) continue;
 
-    let manifest = { id: entry.name, name: entry.name, version: '0.0.0' };
-    const manifestFile = existsSync(join(dir, 'clideck-plugin.json')) ? join(dir, 'clideck-plugin.json') : join(dir, 'termix-plugin.json');
-    if (existsSync(manifestFile)) {
-      try { manifest = { ...manifest, ...JSON.parse(readFileSync(manifestFile, 'utf8')) }; }
-      catch (e) { console.error(`[plugin:${entry.name}] bad manifest: ${e.message}`); continue; }
-    }
-    // Validate settings shape
-    if (manifest.settings != null) {
-      if (!Array.isArray(manifest.settings)) {
-        console.error(`[plugin:${entry.name}] manifest.settings must be an array, ignoring`);
-        manifest.settings = [];
-      } else {
-        manifest.settings = manifest.settings.filter(s =>
-          s && typeof s === 'object' && typeof s.key === 'string' && s.key
-        );
-      }
-    }
+    const manifest = readManifest(dir, entry.name);
+    if (!manifest) continue;
 
-    if (plugins.has(manifest.id)) {
+    if (plugins.has(manifest.id) || uninstalledPlugins.has(manifest.id)) {
       console.error(`[plugin:${manifest.id}] duplicate ID, skipping ${dir}`);
       continue;
     }
 
-    const state = { manifest, dir, shutdownFns: [], actions: [], dynamicOptions: {} };
-    plugins.set(manifest.id, state);
-
-    try {
-      const mod = require(entryFile);
-      if (typeof mod.init === 'function') mod.init(buildApi(manifest.id, dir, state));
-      console.log(`[plugin] ${manifest.name} v${manifest.version}`);
-    } catch (e) {
-      console.error(`[plugin:${manifest.id}] init failed: ${e.message}`);
-      removeHooks(manifest.id);
-      plugins.delete(manifest.id);
+    if (!isInstalled(dir, manifest)) {
+      uninstalledPlugins.set(manifest.id, { manifest, dir });
+      console.log(`[plugin] ${manifest.name} v${manifest.version} (not installed)`);
+      continue;
     }
+
+    loadPlugin(manifest, dir);
   }
 }
 
@@ -232,17 +282,19 @@ function buildApi(pluginId, pluginDir, state) {
     },
 
     resolve(specifier) {
-      // Resolve a package from the app's node_modules. Intended for bundled
-      // plugins that ship with CliDeck and can rely on app-level dependencies.
-      // Third-party plugins should bundle their own deps or be self-contained.
-      try { return require.resolve(specifier); } catch {}
+      // Resolve from plugin-local node_modules first, then app-level
       const parts = specifier.startsWith('@') ? specifier.split('/').slice(0, 2) : [specifier.split('/')[0]];
-      const pkgDir = join(__dirname, 'node_modules', ...parts);
-      const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
-      const entry = typeof pkg.exports === 'string' ? pkg.exports
-        : pkg.exports?.['.']?.import || pkg.exports?.['.']?.default || pkg.exports?.['.']
-        || pkg.module || pkg.main || 'index.js';
-      return join(pkgDir, entry);
+      for (const base of [join(pluginDir, 'node_modules'), join(__dirname, 'node_modules')]) {
+        const pkgDir = join(base, ...parts);
+        try {
+          const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
+          const entry = typeof pkg.exports === 'string' ? pkg.exports
+            : pkg.exports?.['.']?.import || pkg.exports?.['.']?.default || pkg.exports?.['.']
+            || pkg.module || pkg.main || 'index.js';
+          return join(pkgDir, entry);
+        } catch {}
+      }
+      return require.resolve(specifier);
     },
     onShutdown(fn) { state.shutdownFns.push(fn); },
     log(msg) { console.log(`[plugin:${pluginId}] ${msg}`); },
@@ -352,19 +404,37 @@ function handleMessage(msg) {
 
 function getInfo() {
   const cfg = getConfigFn?.();
-  return [...plugins.values()].map(p => ({
+  const installed = [...plugins.values()].map(p => ({
     id: p.manifest.id,
     name: p.manifest.name,
     version: p.manifest.version,
     author: p.manifest.author || '',
     description: p.manifest.description || '',
+    icon: p.manifest.icon || '',
     settings: p.manifest.settings || [],
     settingValues: cfg?.pluginSettings?.[p.manifest.id] || {},
     dynamicOptions: p.dynamicOptions || {},
     actions: p.actions,
     hasClient: existsSync(join(p.dir, 'client.js')),
     bundled: BUNDLED_IDS.has(p.manifest.id),
+    installed: true,
   }));
+  const pending = [...uninstalledPlugins.values()].map(u => ({
+    id: u.manifest.id,
+    name: u.manifest.name,
+    version: u.manifest.version,
+    author: u.manifest.author || '',
+    description: u.manifest.description || '',
+    icon: u.manifest.icon || '',
+    settings: [],
+    settingValues: {},
+    dynamicOptions: {},
+    actions: [],
+    hasClient: false,
+    bundled: BUNDLED_IDS.has(u.manifest.id),
+    installed: false,
+  }));
+  return [...installed, ...pending];
 }
 
 function resolveFile(urlPath) {
@@ -413,6 +483,35 @@ const BUNDLED_IDS = new Set(
     : []
 );
 
+function installPlugin(pluginId, callback) {
+  const entry = uninstalledPlugins.get(pluginId);
+  if (!entry) return callback(new Error('Plugin not found or already installed'));
+  const { manifest, dir } = entry;
+  if (manifest.install !== 'npm') return callback(new Error(`Unknown install type: ${manifest.install}`));
+  console.log(`[plugin] installing ${manifest.name}...`);
+  npmExec(['install', '--production'], { cwd: dir, timeout: 120000 }, (err) => {
+    if (err) {
+      console.error(`[plugin:${pluginId}] install failed: ${err.message}`);
+      return callback(err);
+    }
+    uninstalledPlugins.delete(pluginId);
+    loadPlugin(manifest, dir);
+    // Only persist install state if plugin actually loaded
+    if (!plugins.has(pluginId)) {
+      uninstalledPlugins.set(pluginId, { manifest, dir });
+      return callback(new Error('Plugin installed but failed to load'));
+    }
+    const cfg = getConfigFn?.();
+    if (cfg) {
+      if (!cfg.pluginInstalled) cfg.pluginInstalled = {};
+      cfg.pluginInstalled[pluginId] = true;
+      saveConfigFn?.(cfg);
+    }
+    console.log(`[plugin] ${manifest.name} installed`);
+    callback(null);
+  });
+}
+
 function removePlugin(pluginId) {
   if (BUNDLED_IDS.has(pluginId)) return { success: false, message: 'Cannot remove a built-in plugin' };
   const state = plugins.get(pluginId);
@@ -427,6 +526,12 @@ function removePlugin(pluginId) {
   for (const fn of state.shutdownFns) { try { fn(); } catch {} }
   removeHooks(pluginId);
   plugins.delete(pluginId);
+  // Clear persisted install state
+  const cfg = getConfigFn?.();
+  if (cfg?.pluginInstalled?.[pluginId]) {
+    delete cfg.pluginInstalled[pluginId];
+    saveConfigFn?.(cfg);
+  }
   console.log(`[plugin] removed ${pluginId}`);
   return { success: true };
 }
@@ -435,6 +540,6 @@ module.exports = {
   PLUGINS_DIR, BUNDLED_IDS,
   init, shutdown,
   transformInput, notifyOutput, notifyStatus, notifyTranscript, notifyMenu, clearStatus, isWorking, shouldAutoApproveMenu,
-  handleMessage, updateSetting, getInfo, resolveFile, removePlugin,
+  handleMessage, updateSetting, getInfo, resolveFile, installPlugin, removePlugin,
   getPills, getPillLogs,
 };

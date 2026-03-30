@@ -1,9 +1,11 @@
 {
   "id": "autopilot",
   "name": "Autopilot",
-  "version": "0.14.4",
+  "version": "0.15.0",
   "author": "CliDeck",
   "description": "Multi-agent orchestration — routes output between agents automatically",
+  "icon": "<svg class=\"w-4 h-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 6v6l4 2\"/></svg>",
+  "install": "npm",
   "settings": [
     {
       "key": "enabled",

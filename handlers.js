@@ -309,6 +309,18 @@ function onConnection(ws) {
         sessions.broadcast({ type: 'plugins', list: plugins.getInfo() });
         break;
 
+      case 'plugin.install': {
+        ws.send(JSON.stringify({ type: 'plugin.install.progress', pluginId: msg.pluginId }));
+        plugins.installPlugin(msg.pluginId, (err) => {
+          if (err) {
+            ws.send(JSON.stringify({ type: 'plugin.install.result', pluginId: msg.pluginId, success: false, error: err.message }));
+          } else {
+            sessions.broadcast({ type: 'plugins', list: plugins.getInfo() });
+            ws.send(JSON.stringify({ type: 'plugin.install.result', pluginId: msg.pluginId, success: true }));
+          }
+        });
+        break;
+      }
       case 'plugin.delete': {
         const result = plugins.removePlugin(msg.pluginId);
         if (result.success) {

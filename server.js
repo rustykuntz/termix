@@ -96,15 +96,17 @@ const server = http.createServer((req, res) => {
       try {
         const payload = JSON.parse(body);
         const threadId = payload['thread-id'];
+        // console.log(`[codex] hook received thread=${threadId ? threadId.slice(0,8) : 'none'}`);
         if (threadId) {
           const allSessions = sessions.getSessions();
           for (const [id, s] of allSessions) {
             if (s.sessionToken === threadId) {
-              console.log(`[codex] hook stop session=${id.slice(0,8)} thread=${threadId.slice(0,8)}`);
+              // console.log(`[codex] hook stop session=${id.slice(0,8)} thread=${threadId.slice(0,8)}`);
               sessions.broadcast({ type: 'session.status', id, working: false, source: 'hook' });
               break;
             }
           }
+          // if (!matched) console.log(`[codex] hook no session match for thread=${threadId.slice(0,8)}`);
         }
       } catch {}
       res.writeHead(200).end('{}');

@@ -383,7 +383,7 @@ function renderThemeSection() {
 function renderNotifications() {
   const enabled = !!state.cfg.notifyIdle;
   document.getElementById('cfg-notify-idle').checked = enabled;
-  document.getElementById('cfg-notify-min-work').value = state.cfg.notifyMinWork || 10;
+  document.getElementById('cfg-notify-min-work').value = state.cfg.notifyMinWork ?? 10;
 
   const permStatus = document.getElementById('notify-permission-status');
   if (enabled && 'Notification' in window) {
@@ -461,7 +461,7 @@ function saveConfig() {
   state.cfg.defaultPath = document.getElementById('cfg-default-path').value.trim();
   state.cfg.confirmClose = document.getElementById('cfg-confirm-close').checked;
   state.cfg.notifyIdle = document.getElementById('cfg-notify-idle').checked;
-  state.cfg.notifyMinWork = parseInt(document.getElementById('cfg-notify-min-work').value, 10) || 10;
+  state.cfg.notifyMinWork = parseInt(document.getElementById('cfg-notify-min-work').value, 10) ?? 10;
   state.cfg.notifySoundEnabled = document.getElementById('cfg-notify-sound').checked;
   state.cfg.notifySound = document.getElementById('cfg-notify-sound-pick').value;
   // Preserve fields not managed by this form
