@@ -3,6 +3,7 @@ const { readFileSync, existsSync } = require('fs');
 const { join, extname, resolve } = require('path');
 const { WebSocketServer } = require('ws');
 const { ensurePtyHelper } = require('./utils');
+const transcript = require('./transcript');
 
 // --- Self-update check (runs before server starts) ---
 const currentVersion = require('./package.json').version;
@@ -111,14 +112,16 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const payload = JSON.parse(body);
-        const threadId = payload['thread-id'];
+        const threadId = payload.session_id || payload['thread-id'];
+        const finalText = payload.last_assistant_message || '';
         // console.log(`[codex] hook received thread=${threadId ? threadId.slice(0,8) : 'none'}`);
         if (threadId) {
           const allSessions = sessions.getSessions();
           for (const [id, s] of allSessions) {
             if (s.sessionToken === threadId) {
               // console.log(`[codex] hook stop session=${id.slice(0,8)} thread=${threadId.slice(0,8)}`);
-              sessions.broadcast({ type: 'session.status', id, working: false, source: 'hook' });
+              if (finalText) transcript.captureFinalAgentText(id, 'codex', finalText);
+              sessions.broadcast({ type: 'session.status', id, working: false, source: finalText ? 'hook-final' : 'hook' });
               break;
             }
           }

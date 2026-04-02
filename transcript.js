@@ -159,6 +159,14 @@ function captureAgentTurn(id, agent, lines) {
   store(id, 'agent', text);
 }
 
+function captureFinalAgentText(id, presetId, text) {
+  if (!finalizePreset[id]) return;
+  const clean = builder.cleanAgentText(presetId || finalizePreset[id], text);
+  if (!clean || clean === lastAgentText[id]) return;
+  lastAgentText[id] = clean;
+  store(id, 'agent', clean);
+}
+
 function getUsers(id) {
   if (userTexts[id]?.length) return userTexts[id];
   return (entriesById[id] || []).filter(e => e.role === 'user').map(e => e.text);
@@ -240,4 +248,4 @@ function detectMenu(lines, presetId) {
   return choices.length ? choices : null;
 }
 
-module.exports = { init, trackInput, recordInjectedInput, trackOutput, captureAgentTurn, parseTurnsFromLines, getLastTurns, getCache, getReplayText, clear, setPrefix, setFinalizeOnIdle, detectMenu };
+module.exports = { init, trackInput, recordInjectedInput, trackOutput, captureAgentTurn, captureFinalAgentText, parseTurnsFromLines, getLastTurns, getCache, getReplayText, clear, setPrefix, setFinalizeOnIdle, detectMenu };

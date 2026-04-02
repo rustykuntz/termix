@@ -99,7 +99,12 @@ function detectTelemetryConfig(c) {
     } else if (preset.presetId === 'codex') {
       try {
         const content = readFileSync(join(home, '.codex', 'config.toml'), 'utf8');
-        detected = content.includes('[otel]') && content.includes(`localhost:${port}`) && content.includes('notify-helper');
+        let hooksOk = false;
+        try {
+          const hooks = JSON.parse(readFileSync(join(home, '.codex', 'hooks.json'), 'utf8'));
+          hooksOk = !!hooks?.hooks?.Stop?.some(h => h.hooks?.some(x => x.command?.includes('codex-hook.js')));
+        } catch {}
+        detected = content.includes('[otel]') && content.includes(`localhost:${port}`) && (content.includes('notify-helper') || hooksOk);
       } catch {}
     } else if (preset.presetId === 'gemini-cli') {
       try {
@@ -443,12 +448,19 @@ function applyTelemetryConfig(preset) {
 
     if (preset.presetId === 'codex') {
       const configPath = join(home, '.codex', 'config.toml');
+      const hooksPath = join(home, '.codex', 'hooks.json');
       let content = '';
       if (existsSync(configPath)) content = readFileSync(configPath, 'utf8');
       const hasOtel = content.includes('[otel]');
       const hasNotify = content.includes('notify-helper');
       const hasWrongOtel = content.includes(`endpoint = "http://localhost:${port}/v1/logs"`);
-      if (hasOtel && hasNotify && !hasWrongOtel) return { success: true, message: 'Already configured' };
+      let hooks = {};
+      try { if (existsSync(hooksPath)) hooks = JSON.parse(readFileSync(hooksPath, 'utf8')); } catch {}
+      const stopHooks = hooks.hooks?.Stop || [];
+      const hasStopHook = stopHooks.some(h => h.hooks?.some(x => x.command?.includes('codex-hook.js')));
+      if (hasOtel && hasNotify && hasStopHook && !hasWrongOtel && /(^|\n)\[features\][\s\S]*?codex_hooks\s*=\s*true/m.test(content)) {
+        return { success: true, message: 'Already configured' };
+      }
       if (!hasNotify) {
         const helperPath = join(__dirname, 'bin', 'notify-helper.js').replace(/\\/g, '/');
         const notifyLine = `notify = ["${process.execPath.replace(/\\/g, '/')}", "${helperPath}", "${port}"]\n`;
@@ -465,9 +477,22 @@ function applyTelemetryConfig(preset) {
       } else if (!hasOtel) {
         content = content.trimEnd() + `\n\n[otel]\nexporter = { otlp-http = { endpoint = "http://localhost:${port}", protocol = "json" } }\n`;
       }
+      if (!/(^|\n)\[features\]/m.test(content)) {
+        content = content.trimEnd() + `\n\n[features]\ncodex_hooks = true\n`;
+      } else if (!/(^|\n)\[features\][\s\S]*?codex_hooks\s*=\s*true/m.test(content)) {
+        content = content.replace(/(^|\n)\[features\]\n/, `$1[features]\ncodex_hooks = true\n`);
+      }
+      if (!hasStopHook) {
+        const helperPath = join(__dirname, 'bin', 'codex-hook.js').replace(/\\/g, '/');
+        hooks.hooks = hooks.hooks || {};
+        hooks.hooks.Stop = [...(hooks.hooks.Stop || []), {
+          hooks: [{ type: 'command', command: `"${process.execPath.replace(/\\/g, '/')}" "${helperPath}" ${port} stop`, timeout: 30 }],
+        }];
+      }
       mkdirSync(dirname(configPath), { recursive: true });
       writeFileSync(configPath, content);
-      return { success: true, message: 'Added otel + notify to ~/.codex/config.toml' };
+      writeFileSync(hooksPath, JSON.stringify(hooks, null, 2) + '\n');
+      return { success: true, message: 'Added otel + hooks to ~/.codex/config.toml + hooks.json' };
     }
 
     if (preset.presetId === 'gemini-cli') {
@@ -537,12 +562,25 @@ function removeTelemetryConfig(preset) {
 
     if (preset.presetId === 'codex') {
       const configPath = join(home, '.codex', 'config.toml');
+      const hooksPath = join(home, '.codex', 'hooks.json');
       if (!existsSync(configPath)) return { success: true, message: 'No config file to clean' };
       let content = readFileSync(configPath, 'utf8');
       content = content.replace(/\n?\[otel\][^\[]*/, '');
       content = content.replace(/\n?notify\s*=\s*\[.*?notify-helper.*?\]\s*/g, '');
       writeFileSync(configPath, content.trimEnd() + '\n');
-      return { success: true, message: 'Removed otel + notify from ~/.codex/config.toml' };
+      if (existsSync(hooksPath)) {
+        let hooks = {};
+        try { hooks = JSON.parse(readFileSync(hooksPath, 'utf8')); } catch {}
+        const arr = hooks.hooks?.Stop;
+        if (arr) {
+          hooks.hooks.Stop = arr.filter(h => !h.hooks?.some(x => x.command?.includes('codex-hook.js')));
+          if (!hooks.hooks.Stop.length) delete hooks.hooks.Stop;
+          if (hooks.hooks && !Object.keys(hooks.hooks).length) delete hooks.hooks;
+          if (hooks.hooks) writeFileSync(hooksPath, JSON.stringify(hooks, null, 2) + '\n');
+          else try { unlinkSync(hooksPath); } catch {}
+        }
+      }
+      return { success: true, message: 'Removed otel + hooks from ~/.codex config' };
     }
 
     if (preset.presetId === 'gemini-cli') {
