@@ -30,7 +30,7 @@ function trimBlankEdges(lines) {
   return out;
 }
 
-function upsertCodexConfig(content, nodePath, notifyHelperPath, codexHookEnabled, port) {
+function upsertCodexConfig(content, nodePath, notifyHelperPath, port) {
   const { top, sections } = splitTomlSections(content);
   const notifyLine = `notify = ["${nodePath}", "${notifyHelperPath}", "${port}"]`;
   const cleanedTop = top.filter(line => !/^\s*notify\s*=/.test(line));
@@ -39,19 +39,15 @@ function upsertCodexConfig(content, nodePath, notifyHelperPath, codexHookEnabled
     section.lines = section.lines.filter(line => !/^\s*notify\s*=/.test(line));
   });
 
-  let features = sections.find(s => s.header === '[features]');
-  if (!features) {
-    features = { header: '[features]', lines: [] };
-    sections.push(features);
-  }
-  features.lines = trimBlankEdges([
-    ...features.lines.filter(line => !/^\s*codex_hooks\s*=/.test(line)),
-    `codex_hooks = ${codexHookEnabled ? 'true' : 'false'}`,
-  ]);
+  const keptSections = sections
+    .map(section => section.header === '[features]'
+      ? { ...section, lines: trimBlankEdges(section.lines.filter(line => !/^\s*codex_hooks\s*=/.test(line))) }
+      : section)
+    .filter(section => section.header !== '[features]' || section.lines.length);
 
   const otelHeader = '[otel]';
   const otelBody = [`exporter = { otlp-http = { endpoint = "http://localhost:${port}", protocol = "json" } }`];
-  const withoutOtel = sections.filter(s => s.header !== otelHeader);
+  const withoutOtel = keptSections.filter(s => s.header !== otelHeader);
   withoutOtel.push({ header: otelHeader, lines: otelBody });
 
   const out = [];

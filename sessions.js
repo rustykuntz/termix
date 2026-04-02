@@ -33,7 +33,7 @@ function broadcast(msg) {
     const s = sessions.get(msg.id);
     if (s) {
       s.working = !!msg.working;
-      s._finalizeOnIdle = !msg.working && msg.source !== 'menu' && msg.source !== 'hook-final';
+      s._finalizeOnIdle = !msg.working && msg.source !== 'menu';
     }
     plugins.notifyStatus(msg.id, msg.working, msg.source);
   }
