@@ -14,6 +14,8 @@ import { registerHotkey, unregisterHotkey, unregisterAllForPlugin } from './hotk
 import { renderPrompts } from './prompts.js';
 import { renderRoles } from './roles.js';
 
+const shownAgentHealthToasts = new Set();
+
 function connect() {
   state.ws = new WebSocket(`ws://${location.host}`);
 
@@ -51,7 +53,8 @@ function connect() {
         renderSettings();
         refreshCreator();
         for (const p of state.presets) {
-          if (p.available && p.health && !p.health.ok && p.health.reason !== 'Not installed') {
+          if (p.available && p.health && !p.health.ok && p.health.reason !== 'Not installed' && !shownAgentHealthToasts.has(p.presetId)) {
+            shownAgentHealthToasts.add(p.presetId);
             showToast(`${p.name}: ${p.health.reason}`, { id: `agent-health-${p.presetId}`, type: p.versionOk === false ? 'error' : 'warn', duration: 0, title: 'Agent Attention' });
           }
         }
@@ -204,7 +207,9 @@ function connect() {
         if (!toast) break;
         const actionsEl = toast.querySelector('.setup-actions');
         if (msg.success) {
-          const sid = toast.dataset.sessionId;
+          const sid = (toast.dataset.sessionId && toast.dataset.sessionId !== 'null' && toast.dataset.sessionId !== 'undefined')
+            ? toast.dataset.sessionId
+            : '';
           actionsEl.innerHTML = `
             <div class="flex-1 flex items-center gap-1.5 text-xs text-emerald-400">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
@@ -444,7 +449,7 @@ function showTelemetrySetup(commandId, sessionId) {
 
   const toast = document.createElement('div');
   toast.dataset.setupPreset = preset.presetId;
-  toast.dataset.sessionId = sessionId;
+  if (sessionId) toast.dataset.sessionId = sessionId;
   toast.dataset.commandId = commandId;
   toast.className = 'fixed bottom-5 right-5 z-[500] w-[360px] bg-slate-800/95 backdrop-blur-sm border border-slate-700/60 rounded-xl shadow-2xl shadow-black/60';
   toast.style.opacity = '0';
