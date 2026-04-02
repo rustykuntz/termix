@@ -398,7 +398,7 @@ async function consult(pid, proj) {
   }
 
   const provider = api.getSetting('provider') || 'anthropic';
-  const modelId = api.getSetting('model') || 'claude-haiku-4-5';
+  const modelId = api.getSetting('model') || 'claude-opus-4-6';
   const apiKey = api.getSetting('apiKey') || m.getEnvApiKey(provider) || '';
 
   if (!apiKey) {
@@ -616,9 +616,13 @@ function executeAction(pid, proj, action, args, pillId) {
 
 // --- Lifecycle ---
 
-function start(pid) {
+async function start(pid) {
   if (projects.has(pid)) return { error: 'Already running' };
   if (!enabled()) return { error: 'Autopilot disabled' };
+
+  const provider = api.getSetting('provider') || 'anthropic';
+  const apiKey = api.getSetting('apiKey') || (await ai()).getEnvApiKey(provider) || '';
+  if (!apiKey) return { error: 'Set the API key in Autopilot settings (Plugins panel)' };
 
   const { workers, status } = discoverWorkers(pid);
   if (workers.size < 1) return { error: 'No agents with roles in this project' };
@@ -700,13 +704,13 @@ module.exports.init = function (pluginApi) {
   });
 
   // Toggle on/off
-  api.onFrontendMessage('autopilot-toggle', (msg) => {
+  api.onFrontendMessage('autopilot-toggle', async (msg) => {
     if (projects.has(msg.projectId)) {
       stop(msg.projectId);
     } else {
       // Remove lingering pill from a previous finished run
       api.removeSessionPill(`autopilot-${msg.projectId}`);
-      const r = start(msg.projectId);
+      const r = await start(msg.projectId);
       if (r.error) api.sendToFrontend('error', { msg: r.error });
     }
   });

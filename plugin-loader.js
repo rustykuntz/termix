@@ -1,4 +1,5 @@
 const { readdirSync, readFileSync, existsSync, mkdirSync, cpSync, rmSync } = require('fs');
+const { createHash } = require('crypto');
 const { join, sep } = require('path');
 const { execFile: _execFile } = require('child_process');
 // Windows needs shell:true for npm (it's npm.cmd, not a binary)
@@ -11,7 +12,7 @@ mkdirSync(PLUGINS_DIR, { recursive: true });
 
 // Seed bundled plugins — copy if missing, update if bundled version is newer
 const BUNDLED_DIR = join(__dirname, 'plugins');
-const updatedBundled = new Set(); // plugins updated during seed — install state must be cleared
+const depsChanged = new Set(); // plugins whose install inputs changed — need reinstall
 if (existsSync(BUNDLED_DIR)) {
   for (const entry of readdirSync(BUNDLED_DIR, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -25,8 +26,20 @@ if (existsSync(BUNDLED_DIR)) {
         const installedManifestFile = existsSync(join(target, 'clideck-plugin.json')) ? join(target, 'clideck-plugin.json') : join(target, 'termix-plugin.json');
         const installedManifest = JSON.parse(readFileSync(installedManifestFile, 'utf8'));
         if (bundledManifest.version !== installedManifest.version) {
+          // Check if install inputs changed before copying
+          let needsReinstall = false;
+          if (bundledManifest.install) {
+            const installHash = (dir) => {
+              const h = createHash('sha256');
+              for (const f of ['package.json', 'package-lock.json']) {
+                try { h.update(readFileSync(join(dir, f))); } catch {}
+              }
+              return h.digest('hex');
+            };
+            needsReinstall = installHash(target) !== installHash(join(BUNDLED_DIR, entry.name));
+          }
           cpSync(join(BUNDLED_DIR, entry.name), target, { recursive: true });
-          if (bundledManifest.install) updatedBundled.add(bundledManifest.id || entry.name);
+          if (needsReinstall) depsChanged.add(bundledManifest.id || entry.name);
           console.log(`[plugin] updated ${entry.name} ${installedManifest.version} → ${bundledManifest.version}`);
         }
       } catch {}
@@ -132,14 +145,14 @@ function init(broadcast, getSessions, getConfig, saveConfig, sessionInput, creat
   createSessionFn = createProgrammatic;
   closeSessionFn = closeSession;
 
-  // Clear install state for bundled plugins that were updated during seed
-  if (updatedBundled.size) {
+  // Clear install state only for bundled plugins whose dependencies changed
+  if (depsChanged.size) {
     const cfg = getConfig();
     if (cfg?.pluginInstalled) {
-      for (const id of updatedBundled) {
+      for (const id of depsChanged) {
         if (cfg.pluginInstalled[id]) {
           delete cfg.pluginInstalled[id];
-          console.log(`[plugin] cleared install state for updated ${id}`);
+          console.log(`[plugin] install inputs changed, cleared install state for ${id}`);
         }
       }
       saveConfig(cfg);

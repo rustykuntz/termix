@@ -1,5 +1,5 @@
 import { state, send } from './state.js';
-import { esc, resolveIconPath } from './utils.js';
+import { esc, miniMarkdown, resolveIconPath } from './utils.js';
 import { resolveTheme, resolveAccent, applyTheme } from './profiles.js';
 import { attachToTerminal, registerHotkey } from './hotkeys.js';
 import { closeDropdown } from './prompts.js';
@@ -338,21 +338,25 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   term.loadAddon(fit);
   term.onData(data => send({ type: 'input', id, data }));
 
-  // [SCREEN-CAPTURE] extract terminal buffer when BOTH idle AND render-silent (2s)
-  // Decoupled from status: telemetry knows when agent is done, onRender knows when terminal is done
-  const _hasServerStatus = cmd?.presetId === 'claude-code' || cmd?.presetId === 'codex' || cmd?.presetId === 'gemini-cli' || cmd?.presetId === 'opencode';
-  let _screenTimer = null, _renderSilent = false;
+  // [SCREEN-CAPTURE] extract terminal buffer only when idle + render-silent + user-quiet
+  let _screenTimer = null, _renderSilent = false, _lastTyping = 0;
   function _tryScreenCapture() {
     const entry = state.terms.get(id);
-    if (!entry?.pendingScreenCapture || (!_renderSilent && !_hasServerStatus) || !entry.term) return;
+    if (!entry?.pendingScreenCapture || !entry.term) return;
+    if (!_renderSilent || Date.now() - _lastTyping < 2000) return;
     entry.pendingScreenCapture = false;
     const buf = entry.term.buffer.active;
     const lines = [];
     for (let i = 0; i < buf.length; i++) { const line = buf.getLine(i); if (line) lines.push(line.translateToString(true)); }
     send({ type: 'terminal.buffer', id, lines });
   }
-  let _lastTyping = 0;
-  term.onData(() => { _lastTyping = Date.now(); });
+  term.onData(() => {
+    _lastTyping = Date.now();
+    // User typing invalidates pending capture — will re-try after silence
+    _renderSilent = false;
+    clearTimeout(_screenTimer);
+    _screenTimer = setTimeout(() => { _renderSilent = true; _tryScreenCapture(); }, 2000);
+  });
   term.onRender(() => {
     _renderSilent = false;
     clearTimeout(_screenTimer);
@@ -364,7 +368,7 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
     if (entry) entry.lastRenderAt = Date.now();
   });
 
-  // Expose capture function so setStatus can trigger it when idle arrives after render silence
+  // Expose capture function so setStatus can schedule a retry
   setTimeout(() => { const e = state.terms.get(id); if (e) e.tryScreenCapture = _tryScreenCapture; }, 0);
 
   term.open(el);
@@ -394,8 +398,21 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
     fitRaf = requestAnimationFrame(() => { fitRaf = 0; doFit(); });
   });
   ro.observe(el);
-  // Safety: if RO hasn't fired within 500ms, flush anyway to avoid unbounded queue
-  setTimeout(() => { if (!fitted) { fitted = true; for (const chunk of pending) term.write(chunk); pending = null; updatePreview(id); } }, 500);
+  // Safety: if RO hasn't fired within 500ms, flush anyway to avoid unbounded queue.
+  // If the element is hidden (background tab), force a reasonable default size so the PTY
+  // doesn't stay at a tiny default and produce garbled output.
+  setTimeout(() => {
+    if (!fitted) {
+      fitted = true;
+      if (!el.offsetWidth) {
+        term.resize(120, 30);
+        send({ type: 'resize', id, cols: 120, rows: 30 });
+      }
+      for (const chunk of pending) term.write(chunk);
+      pending = null;
+      updatePreview(id);
+    }
+  }, 500);
   const cancelFitRaf = () => { if (fitRaf) { cancelAnimationFrame(fitRaf); fitRaf = 0; } };
   state.terms.set(id, { term, fit, el, ro, cancelFitRaf, themeId, commandId, projectId: projectId || null, muted: !!muted, working: false, workStartedAt: null, stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '' });
   document.getElementById('empty').style.display = 'none';
@@ -526,7 +543,7 @@ function setStatus(id, working) {
 
   // Notify on working → idle transition
   if (wasWorking && !working && !entry.muted) {
-    const minWork = state.cfg.notifyMinWork ?? 10;
+    const minWork = state.cfg.notifyMinWork ?? 0;
     const workDuration = (Date.now() - (entry.workStartedAt || 0)) / 1000;
     if (workDuration >= minWork) {
       entry.workStartedAt = null;
@@ -546,11 +563,14 @@ function setStatus(id, working) {
     }
   }
 
-  // Mark idle so the onRender silence watcher can capture .screen
-  // Also try immediately — renders may already be silent
+  // Mark for capture — try immediately (safe: guards will block if not settled),
+  // otherwise the render/typing silence watcher will fire when the buffer settles
   if (wasWorking && !working) { entry.pendingScreenCapture = true; entry.tryScreenCapture?.(); }
 
-  if (working && !entry.workStartedAt) entry.workStartedAt = Date.now();
+  if (working) {
+    entry.pendingScreenCapture = false; // cancel stale capture if back to working
+    if (!entry.workStartedAt) entry.workStartedAt = Date.now();
+  }
 
   const el = document.querySelector(`.group[data-id="${id}"] .session-status`);
   if (!el) return;
@@ -1112,7 +1132,7 @@ function openPillLog(id) {
           <span class="flex-1"></span>
           <button class="pill-log-clear text-[11px] text-slate-600 hover:text-slate-400 transition-colors">Clear</button>
         </div>
-        <div class="pill-log-body flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed tmx-scroll"></div>
+        <div class="pill-log-body flex-1 overflow-y-auto p-4 text-xs leading-relaxed tmx-scroll"></div>
       </div>`;
     document.getElementById('terminals').appendChild(panel);
     panel.querySelector('.pill-log-clear').addEventListener('click', () => {
@@ -1147,9 +1167,45 @@ function appendLogLine(entry) {
   const body = document.querySelector('#pill-log-panel .pill-log-body');
   if (!body) return;
   const line = document.createElement('div');
-  line.className = 'flex gap-3 py-0.5';
   const time = new Date(entry.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  line.innerHTML = `<span class="text-slate-600 flex-shrink-0">${time}</span><span class="text-slate-400">${esc(entry.text)}</span>`;
+  const t = entry.text;
+
+  // Categorize log entries for visual treatment
+  let color = 'text-slate-400';
+  let icon = '';
+  let content = esc(t);
+  if (/^Started with/.test(t)) {
+    color = 'text-emerald-400';
+    icon = '<span class="text-emerald-500">&#9654;</span>';
+  } else if (/^Routed /.test(t)) {
+    color = 'text-indigo-400';
+    icon = '<span class="text-indigo-500">&#8594;</span>';
+  } else if (/^Notify:/.test(t)) {
+    color = 'text-amber-300';
+    icon = '<span class="text-amber-500">&#9679;</span>';
+    content = '<strong class="text-amber-300">Notify:</strong> ' + miniMarkdown(t.replace(/^Notify:\s*/, ''));
+  } else if (/^Consulting /.test(t)) {
+    color = 'text-slate-500';
+    icon = '<span class="text-slate-600">&#8230;</span>';
+  } else if (/→ working$/.test(t)) {
+    color = 'text-blue-400';
+    icon = '<span class="text-blue-500">&#9679;</span>';
+  } else if (/→ idle$/.test(t)) {
+    color = 'text-slate-500';
+    icon = '<span class="text-slate-600">&#9675;</span>';
+  } else if (/^Completed$/.test(t)) {
+    color = 'text-emerald-400';
+    icon = '<span class="text-emerald-500">&#10003;</span>';
+  } else if (/^Stopped$/.test(t)) {
+    color = 'text-slate-500';
+    icon = '<span class="text-slate-600">&#9632;</span>';
+  } else if (/^Paused/.test(t)) {
+    color = 'text-amber-400';
+    icon = '<span class="text-amber-500">&#9646;&#9646;</span>';
+  }
+
+  line.className = 'flex gap-3 py-1 items-start';
+  line.innerHTML = `<span class="text-slate-600 flex-shrink-0 tabular-nums">${time}</span><span class="w-4 flex-shrink-0 text-center">${icon}</span><span class="${color} leading-relaxed">${content}</span>`;
   body.appendChild(line);
   body.scrollTop = body.scrollHeight;
 }

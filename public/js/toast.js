@@ -1,3 +1,5 @@
+import { esc, miniMarkdown } from './utils.js';
+
 const ICONS = {
   info:    '<path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/>',
   success: '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>',
@@ -17,18 +19,6 @@ function getContainer() {
   c.className = 'fixed bottom-5 right-5 z-[500] flex flex-col gap-2.5';
   document.body.appendChild(c);
   return c;
-}
-
-/**
- * Minimal markdown: **bold**, `code`, - bullet lists, line breaks.
- */
-function miniMarkdown(text) {
-  return esc(text)
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-slate-200 font-semibold">$1</strong>')
-    .replace(/`(.+?)`/g, '<code class="px-1 py-0.5 rounded bg-slate-700/60 text-slate-300 text-[11px]">$1</code>')
-    .replace(/^[-•]\s+(.+)$/gm, '<li class="ml-3">$1</li>')
-    .replace(/(<li.*<\/li>\n?)+/g, '<ul class="list-disc pl-2 space-y-0.5">$&</ul>')
-    .replace(/\n/g, '<br>');
 }
 
 /**
@@ -74,8 +64,3 @@ export function showToast(message, opts = {}) {
   return { dismiss };
 }
 
-function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
