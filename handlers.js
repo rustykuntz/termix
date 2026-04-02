@@ -10,6 +10,7 @@ const { listDirs, binName, defaultShell } = require('./utils');
 for (const p of presets) if (p.presetId === 'shell') p.command = defaultShell;
 const transcript = require('./transcript');
 const plugins = require('./plugin-loader');
+const { upsertCodexConfig, validateCodexConfigToml } = require('./codex-config');
 
 const opencodePluginDir = join(
   process.platform === 'win32' ? (process.env.APPDATA || join(os.homedir(), 'AppData', 'Roaming')) : join(os.homedir(), '.config'),
@@ -496,7 +497,7 @@ function applyTelemetryConfig(preset) {
       let content = '';
       if (existsSync(configPath)) content = readFileSync(configPath, 'utf8');
       const hasOtel = content.includes('[otel]');
-      const hasNotify = content.includes('notify-helper');
+      const hasNotify = /^\s*notify\s*=.*notify-helper/m.test(content);
       const hasWrongOtel = content.includes(`endpoint = "http://localhost:${port}/v1/logs"`);
       let hooks = {};
       try { if (existsSync(hooksPath)) hooks = JSON.parse(readFileSync(hooksPath, 'utf8')); } catch {}
@@ -505,27 +506,10 @@ function applyTelemetryConfig(preset) {
       if (hasOtel && hasNotify && hasStopHook && !hasWrongOtel && /(^|\n)\[features\][\s\S]*?codex_hooks\s*=\s*true/m.test(content)) {
         return { success: true, message: 'Already configured' };
       }
-      if (!hasNotify) {
-        const helperPath = join(__dirname, 'bin', 'notify-helper.js').replace(/\\/g, '/');
-        const notifyLine = `notify = ["${process.execPath.replace(/\\/g, '/')}", "${helperPath}", "${port}"]\n`;
-        // Insert before the first [section] so it stays top-level
-        const firstSection = content.search(/^\[/m);
-        if (firstSection >= 0) {
-          content = content.slice(0, firstSection) + notifyLine + '\n' + content.slice(firstSection);
-        } else {
-          content = content + '\n' + notifyLine;
-        }
-      }
-      if (hasWrongOtel) {
-        content = content.replace(`endpoint = "http://localhost:${port}/v1/logs"`, `endpoint = "http://localhost:${port}"`);
-      } else if (!hasOtel) {
-        content = content.trimEnd() + `\n\n[otel]\nexporter = { otlp-http = { endpoint = "http://localhost:${port}", protocol = "json" } }\n`;
-      }
-      if (!/(^|\n)\[features\]/m.test(content)) {
-        content = content.trimEnd() + `\n\n[features]\ncodex_hooks = true\n`;
-      } else if (!/(^|\n)\[features\][\s\S]*?codex_hooks\s*=\s*true/m.test(content)) {
-        content = content.replace(/(^|\n)\[features\]\n/, `$1[features]\ncodex_hooks = true\n`);
-      }
+      const notifyHelperPath = join(__dirname, 'bin', 'notify-helper.js').replace(/\\/g, '/');
+      const nextContent = upsertCodexConfig(content, process.execPath.replace(/\\/g, '/'), notifyHelperPath, true, port);
+      const valid = validateCodexConfigToml(nextContent);
+      if (!valid.ok) return { success: false, message: valid.error };
       if (!hasStopHook) {
         const helperPath = join(__dirname, 'bin', 'codex-hook.js').replace(/\\/g, '/');
         hooks.hooks = hooks.hooks || {};
@@ -534,7 +518,7 @@ function applyTelemetryConfig(preset) {
         }];
       }
       mkdirSync(dirname(configPath), { recursive: true });
-      writeFileSync(configPath, content);
+      writeFileSync(configPath, nextContent);
       writeFileSync(hooksPath, JSON.stringify(hooks, null, 2) + '\n');
       return { success: true, message: 'Added otel + hooks to ~/.codex/config.toml + hooks.json' };
     }
