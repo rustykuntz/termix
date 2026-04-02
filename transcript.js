@@ -84,6 +84,16 @@ function trackInput(id, data) {
   }
 }
 
+function recordInjectedInput(id, text) {
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    store(id, 'user', line);
+    if (!userTexts[id]) userTexts[id] = [];
+    userTexts[id].push(line);
+  }
+}
+
 // Server-side fallback: captures raw PTY output (noisy but always available)
 function trackOutput(id, data) {
   if (!outputBuf[id]) outputBuf[id] = { text: '', timer: null };
@@ -340,4 +350,4 @@ function detectMenu(lines, presetId) {
   return choices.length ? choices : null;
 }
 
-module.exports = { init, trackInput, trackOutput, storeBuffer, getScreen, getScreenTurns, getLastTurns, getCache, clear, setPrefix, detectMenu };
+module.exports = { init, trackInput, recordInjectedInput, trackOutput, storeBuffer, getScreen, getScreenTurns, getLastTurns, getCache, clear, setPrefix, detectMenu };

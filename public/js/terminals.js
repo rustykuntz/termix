@@ -339,16 +339,48 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   term.onData(data => send({ type: 'input', id, data }));
 
   // [SCREEN-CAPTURE] extract terminal buffer only when idle + render-silent + user-quiet
-  let _screenTimer = null, _renderSilent = false, _lastTyping = 0;
-  function _tryScreenCapture() {
+  let _screenTimer = null, _renderSilent = false, _lastTyping = 0, _initialCaptureDone = false;
+  function _sendCapture() {
     const entry = state.terms.get(id);
-    if (!entry?.pendingScreenCapture || !entry.term) return;
-    if (!_renderSilent || Date.now() - _lastTyping < 2000) return;
-    entry.pendingScreenCapture = false;
+    if (!entry?.term) return;
     const buf = entry.term.buffer.active;
     const lines = [];
     for (let i = 0; i < buf.length; i++) { const line = buf.getLine(i); if (line) lines.push(line.translateToString(true)); }
     send({ type: 'terminal.buffer', id, lines });
+  }
+  // Must match storeBuffer()'s isChrome in transcript.js — if storeBuffer would discard every
+  // line, there's no point capturing (and the initial one-shot would be wasted).
+  function _isChrome(t) {
+    return !t
+      || /^[─━═\u2500-\u257f]+$/.test(t)
+      || /^[▀▄█▌▐░▒▓╭╮╰╯│╔╗╚╝║]+$/.test(t)
+      || (/[█▀▄▌▐░▒▓]/.test(t) && /^[█▀▄▌▐░▒▓\s]+$/.test(t))
+      || /^[❯>$%#]\s*$/.test(t)
+      || /^(esc to interrupt|\? for shortcuts)$/i.test(t);
+  }
+  function _hasContent() {
+    const entry = state.terms.get(id);
+    if (!entry?.term) return false;
+    const buf = entry.term.buffer.active;
+    for (let i = 0; i < buf.length; i++) {
+      const text = buf.getLine(i)?.translateToString(true).trim();
+      if (!_isChrome(text)) return true;
+    }
+    return false;
+  }
+  function _tryScreenCapture() {
+    const entry = state.terms.get(id);
+    if (!_renderSilent || Date.now() - _lastTyping < 2000) return;
+    // Initial capture: first time render settles with real content, capture regardless of working/idle
+    if (!_initialCaptureDone) {
+      if (!_hasContent()) return; // retry on next silence
+      _initialCaptureDone = true;
+      _sendCapture();
+      return;
+    }
+    if (!entry?.pendingScreenCapture) return;
+    entry.pendingScreenCapture = false;
+    _sendCapture();
   }
   term.onData(() => {
     _lastTyping = Date.now();

@@ -90,6 +90,7 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
     if (session.pendingRolePrompt && !session._rolePromptTimer) {
       session._rolePromptTimer = setTimeout(() => {
         if (session.pendingRolePrompt) {
+          transcript.recordInjectedInput(id, session.pendingRolePrompt);
           term.write(session.pendingRolePrompt);
           setTimeout(() => term.write('\r'), 150);
           console.log(`Session ${id.slice(0, 8)}: injected role prompt`);
@@ -272,11 +273,15 @@ function resume(msg, ws, cfg) {
 
 // --- Standard session operations ---
 
+function writeSessionInput(id, data) {
+  transcript.trackInput(id, data);
+  sessions.get(id)?.pty.write(data);
+}
+
 function input(msg) {
   const data = plugins.transformInput(msg.id, msg.data);
   activity.trackIn(msg.id, data.length);
-  transcript.trackInput(msg.id, data);
-  sessions.get(msg.id)?.pty.write(data);
+  writeSessionInput(msg.id, data);
   const s = sessions.get(msg.id);
   if (!s) return;
   // Menu choice selected → back to working (Enter or digit keys only)
