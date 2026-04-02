@@ -111,10 +111,12 @@ function integrationSection(c) {
   const preset = telemetryPreset(c);
   if (!preset) return '';
   if (!preset.telemetryAutoSetup && !preset.bridge) return '';
-  const configured = !!c.telemetryEnabled;
-  const detail = configured
-    ? `<span class="text-emerald-400/80">Configured</span> &mdash; ${esc(preset.telemetryConfigPath || '')}`
-    : `<span class="text-slate-500">Not configured</span> &mdash; enable agent to set up`;
+  const configured = !!c.telemetryStatus?.ok;
+  const detail = preset.versionOk === false
+    ? `<span class="text-rose-400/80">Update required</span> &mdash; need ${esc(preset.minVersion)}+ (found ${esc(preset.version || 'unknown')})`
+    : configured
+      ? `<span class="text-emerald-400/80">Configured</span> &mdash; ${esc(preset.telemetryConfigPath || '')}`
+      : `<span class="text-amber-400/80">${esc(c.telemetryStatus?.error || 'Needs setup')}</span> &mdash; ${esc(preset.telemetryConfigPath || '')}`;
   return `
     <div class="mt-3 pt-3 border-t border-slate-700/50">
       <div class="text-[11px] text-slate-500">${detail}</div>

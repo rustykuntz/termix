@@ -35,11 +35,15 @@ function isPresetMissing(p) {
   return cmd.command === p.command;
 }
 
+function isPresetOutdated(p) {
+  return p.available !== false && p.versionOk === false;
+}
+
 // True if preset binary exists but telemetry/hooks are not configured yet
 function isPresetUnpatched(p) {
-  if (p.available === false || !p.telemetryAutoSetup) return false;
+  if (p.available === false || p.versionOk === false || !p.telemetryAutoSetup) return false;
   const cmd = findCommandForPreset(p);
-  return !cmd || !cmd.telemetryEnabled;
+  return !cmd || !cmd.telemetryStatus?.ok;
 }
 
 function renderPresetButtons() {
@@ -50,6 +54,14 @@ function renderPresetButtons() {
         <span class="opacity-40">${agentIcon(p.icon, 24)}</span>
         <span class="flex-1 min-w-0">${esc(p.name)}</span>
         <button class="install-btn px-2.5 py-1 text-[11px] font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded-md transition-colors" data-preset="${p.presetId}">Add</button>
+      </div>`;
+    }
+    if (isPresetOutdated(p)) {
+      return `
+      <div class="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-left text-slate-500">
+        <span class="opacity-40">${agentIcon(p.icon, 24)}</span>
+        <span class="flex-1 min-w-0">${esc(p.name)}</span>
+        <button class="install-btn px-2.5 py-1 text-[11px] font-medium text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded-md transition-colors" data-preset="${p.presetId}">Update</button>
       </div>`;
     }
     if (isPresetUnpatched(p)) {

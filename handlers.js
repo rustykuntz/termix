@@ -44,6 +44,17 @@ function compareVersions(a, b) {
   return 0;
 }
 
+function parseVersion(text) {
+  const m = String(text || '').match(/\b(\d+\.\d+\.\d+)\b/);
+  return m ? m[1] : '';
+}
+
+function getInstalledVersion(bin) {
+  try { return parseVersion(execFileSync(bin, ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })); } catch {}
+  try { return parseVersion(execFileSync(bin, ['-v'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })); } catch {}
+  return '';
+}
+
 function checkRemoteUpdate(ws) {
   const now = Date.now();
   if (remoteUpdateCache && now - remoteUpdateCheckedAt < REMOTE_UPDATE_INTERVAL) {
@@ -68,9 +79,20 @@ function checkRemoteUpdate(ws) {
 const whichCmd = process.platform === 'win32' ? 'where' : 'which';
 function checkAvailability() {
   for (const p of presets) {
-    if (p.presetId === 'shell') { p.available = true; continue; }
-    try { execFileSync(whichCmd, [binName(p.command)], { stdio: 'ignore' }); p.available = true; }
-    catch { p.available = false; }
+    if (p.presetId === 'shell') { p.available = true; p.version = ''; p.versionOk = true; p.health = { ok: true }; continue; }
+    const bin = binName(p.command);
+    try {
+      execFileSync(whichCmd, [bin], { stdio: 'ignore' });
+      p.available = true;
+      p.version = getInstalledVersion(bin);
+      p.versionOk = !p.minVersion || (p.version && compareVersions(p.version, p.minVersion) >= 0);
+      p.health = p.versionOk ? { ok: true } : { ok: false, reason: `Update required (${p.minVersion}+)` };
+    } catch {
+      p.available = false;
+      p.version = '';
+      p.versionOk = true;
+      p.health = { ok: false, reason: 'Not installed' };
+    }
   }
 }
 checkAvailability();
@@ -82,11 +104,13 @@ function detectTelemetryConfig(c) {
   const home = os.homedir();
   const port = '4000';
   let changed = false;
+  let repairedAny = false;
   for (const cmd of c.commands || []) {
     const bin = binName(cmd.command);
     const preset = presets.find(p => binName(p.command) === bin);
     if (!preset) continue;
     let detected = false;
+    let reason = '';
     if (preset.presetId === 'claude-code') {
       try {
         const s = JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8'));
@@ -95,16 +119,19 @@ function detectTelemetryConfig(c) {
         detected = has(hooks.UserPromptSubmit, 'start') && has(hooks.Stop, 'stop') && has(hooks.StopFailure, 'stop')
                 && has(hooks.PreToolUse, 'menu')
                 && hooks.Notification?.some(h => h.matcher === 'idle_prompt' && h.hooks?.some(x => x.url?.includes('/hook/claude/idle')));
+        if (!detected) reason = 'Needs re-patch';
       } catch {}
     } else if (preset.presetId === 'codex') {
       try {
         const content = readFileSync(join(home, '.codex', 'config.toml'), 'utf8');
+        const featureOk = /(^|\n)\[features\][\s\S]*?codex_hooks\s*=\s*true/m.test(content);
         let hooksOk = false;
         try {
           const hooks = JSON.parse(readFileSync(join(home, '.codex', 'hooks.json'), 'utf8'));
           hooksOk = !!hooks?.hooks?.Stop?.some(h => h.hooks?.some(x => x.command?.includes('codex-hook.js')));
         } catch {}
-        detected = content.includes('[otel]') && content.includes(`localhost:${port}`) && (content.includes('notify-helper') || hooksOk);
+        detected = content.includes('[otel]') && content.includes(`localhost:${port}`) && hooksOk && featureOk;
+        if (!detected) reason = 'Needs re-patch';
       } catch {}
     } else if (preset.presetId === 'gemini-cli') {
       try {
@@ -112,16 +139,32 @@ function detectTelemetryConfig(c) {
         const hooks = s.hooks || {};
         const has = (arr, route) => arr?.some(h => h.hooks?.some(x => x.command?.includes('gemini-hook.js') && x.command?.includes(` ${route}`)));
         detected = has(hooks.BeforeAgent, 'start') && has(hooks.AfterAgent, 'stop') && has(hooks.SessionEnd, 'stop') && has(hooks.BeforeTool, 'menu');
+        if (!detected) reason = 'Needs re-patch';
       } catch {}
     } else if (preset.presetId === 'opencode') {
       detected = existsSync(join(opencodePluginDir, 'clideck-bridge.js')) || existsSync(join(opencodePluginDir, 'termix-bridge.js'));
+      if (!detected) reason = 'Needs re-patch';
     } else { continue; }
-    if (detected !== !!cmd.telemetryEnabled) {
-      cmd.telemetryEnabled = detected;
-      cmd.telemetryStatus = detected ? { ok: true } : null;
+    if (preset.available && preset.minVersion && !preset.versionOk) {
+      detected = false;
+      reason = `Update required (${preset.minVersion}+)`;
+    } else if (!detected && cmd.telemetryEnabled && preset.telemetryAutoSetup && preset.available && preset.versionOk) {
+      const repaired = applyTelemetryConfig(preset);
+      if (repaired.success) {
+        repairedAny = true;
+        continue;
+      }
+    }
+    const nextEnabled = detected || (!!cmd.telemetryEnabled && !reason.startsWith('Update required'));
+    const nextStatus = detected ? { ok: true } : { ok: false, error: reason || 'Needs setup' };
+    if (cmd.telemetryEnabled !== nextEnabled || JSON.stringify(cmd.telemetryStatus || null) !== JSON.stringify(nextStatus)) {
+      cmd.telemetryEnabled = nextEnabled;
+      cmd.telemetryStatus = nextStatus;
       changed = true;
     }
+    preset.health = detected ? { ok: true } : { ok: false, reason: reason || 'Needs setup' };
   }
+  if (repairedAny) return detectTelemetryConfig(c) || true;
   if (changed) console.log('Config: synced telemetry/plugin state from detected config files');
   return changed;
 }
@@ -205,6 +248,7 @@ function onConnection(ws) {
 
       case 'checkAvailability':
         checkAvailability();
+        if (detectTelemetryConfig(cfg)) config.save(cfg);
         ws.send(JSON.stringify({ type: 'presets', presets }));
         break;
 

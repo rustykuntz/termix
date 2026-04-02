@@ -50,6 +50,11 @@ function connect() {
         state.presets = msg.presets;
         renderSettings();
         refreshCreator();
+        for (const p of state.presets) {
+          if (p.available && p.health && !p.health.ok && p.health.reason !== 'Not installed') {
+            showToast(`${p.name}: ${p.health.reason}`, { id: `agent-health-${p.presetId}`, type: p.versionOk === false ? 'error' : 'warn', duration: 0, title: 'Agent Attention' });
+          }
+        }
         break;
       case 'sessions.resumable':
         state.resumable = msg.list;
