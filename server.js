@@ -67,6 +67,22 @@ const ALIASES = {
 };
 
 const PUBLIC_ROOT = join(__dirname, 'public');
+const geminiMenuPoll = new Map();
+
+function startGeminiMenuPoll(id) {
+  const prev = geminiMenuPoll.get(id);
+  if (prev) clearInterval(prev);
+  const started = Date.now();
+  const timer = setInterval(() => {
+    if (Date.now() - started > 3000) {
+      clearInterval(timer);
+      geminiMenuPoll.delete(id);
+      return;
+    }
+    sessions.broadcast({ type: 'terminal.capture', id });
+  }, 500);
+  geminiMenuPoll.set(id, timer);
+}
 
 const server = http.createServer((req, res) => {
   // OTLP telemetry endpoint — receives JSON from CLI agents
@@ -136,9 +152,36 @@ const server = http.createServer((req, res) => {
             } else if (route === 'stop' || route === 'idle') {
               sessions.broadcast({ type: 'session.status', id: clideckId, working: false, source: 'hook' });
             } else if (route === 'menu') {
-              // PreToolUse: trigger screen capture — detectMenu will set idle if a choice menu is visible
-              setTimeout(() => sessions.broadcast({ type: 'screen.capture', id: clideckId }), 500);
+              // PreToolUse: trigger terminal capture — detectMenu will set idle if a choice menu is visible
+              setTimeout(() => sessions.broadcast({ type: 'terminal.capture', id: clideckId }), 500);
             }
+          }
+        }
+      } catch {}
+      res.writeHead(200).end('{}');
+    });
+    return;
+  }
+
+  // Gemini hook endpoints — deterministic start/stop/menu signals
+  if (req.method === 'POST' && req.url.startsWith('/hook/gemini/')) {
+    let body = '';
+    req.on('data', chunk => { body += chunk; if (body.length > 1e5) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body);
+        const route = req.url.slice('/hook/gemini/'.length);
+        const allSessions = sessions.getSessions();
+        const clideckId = payload.clideck_id && allSessions.has(payload.clideck_id)
+          ? payload.clideck_id
+          : [...allSessions].find(([, s]) => s.sessionToken === payload.session_id)?.[0];
+        if (clideckId) {
+          const s = allSessions.get(clideckId);
+          if (s && payload.session_id && !s.sessionToken) s.sessionToken = payload.session_id;
+          if (route === 'menu') {
+            startGeminiMenuPoll(clideckId);
+          } else {
+            sessions.broadcast({ type: 'session.status', id: clideckId, working: route === 'start', source: 'hook' });
           }
         }
       } catch {}
@@ -160,7 +203,7 @@ const server = http.createServer((req, res) => {
 
   // DEBUG: log any POST (agents might use /v1/traces, /v1/metrics, or other paths)
   if (req.method === 'POST') {
-    console.log(`OTLP: received POST ${req.url} (not handled)`);
+    // console.log(`OTLP: received POST ${req.url} (not handled)`);
     return res.writeHead(200).end('{}');
   }
 

@@ -75,6 +75,12 @@ function addTokens(pid, usage) {
   api.sendToFrontend('tokens', { projectId: pid, ...u });
 }
 
+function latestAgentOutput(id) {
+  const turns = api.getTranscript(id, 20);
+  const last = [...turns].reverse().find(t => t.role === 'agent');
+  return last?.text?.trim().slice(0, 8000) || null;
+}
+
 // --- Consumed state (persisted per-project: role → boolean) ---
 
 function captureIdleOutput(id, pid, proj) {
@@ -82,9 +88,8 @@ function captureIdleOutput(id, pid, proj) {
   if (proj.status.get(id)) return;
   const w = proj.workers.get(id);
   if (w) {
-    const turns = api.getScreenTurns(id, w.presetId, { raw: true });
-    if (turns?.length && turns[turns.length - 1].role === 'agent') {
-      const out = turns[turns.length - 1].text.trim().slice(0, 8000);
+    const out = latestAgentOutput(id);
+    if (out) {
       const oid = outputId(out);
       const prev = proj.lastOutput.get(id);
       const isNew = !prev || prev.outputId !== oid;
@@ -200,13 +205,9 @@ function refreshWorkers(pid, proj) {
       proj.workers.set(sid, w);
       proj.status.set(sid, liveStatus.get(sid));
       api.setAutoApproveMenu(sid, true);
-      // Seed output for idle new workers from .screen
       if (!liveStatus.get(sid)) {
-        const turns = api.getScreenTurns(sid, w.presetId, { raw: true });
-        if (turns?.length && turns[turns.length - 1].role === 'agent') {
-          const text = turns[turns.length - 1].text.trim().slice(0, 8000);
-          proj.lastOutput.set(sid, { text, capturedAt: Date.now(), outputId: outputId(text) });
-        }
+        const text = latestAgentOutput(sid);
+        if (text) proj.lastOutput.set(sid, { text, capturedAt: Date.now(), outputId: outputId(text) });
       }
     }
   }
@@ -430,11 +431,8 @@ async function consult(pid, proj) {
     let capturedAt = stored?.capturedAt || 0;
     let oid = stored?.outputId || null;
     if (!text) {
-      const turns = api.getScreenTurns(sid, w.presetId, { raw: true });
-      if (turns?.length) {
-        const last = [...turns].reverse().find(t => t.role === 'agent');
-        if (last) { text = last.text.trim().slice(0, 8000); capturedAt = capturedAt || Date.now(); oid = outputId(text); }
-      }
+      text = latestAgentOutput(sid);
+      if (text) { capturedAt = capturedAt || Date.now(); oid = outputId(text); }
     }
     entries.push({ sid, role: w.role, text, capturedAt, outputId: oid });
   }
@@ -554,14 +552,8 @@ function executeAction(pid, proj, action, args, pillId) {
       let out = stored?.text || null;
       let oid = stored?.outputId || null;
       if (!out && src) {
-        const w = proj.workers.get(src);
-        if (w) {
-          const turns = api.getScreenTurns(src, w.presetId, { raw: true });
-          if (turns?.length && turns[turns.length - 1].role === 'agent') {
-            out = turns[turns.length - 1].text.trim().slice(0, 8000);
-            oid = outputId(out);
-          }
-        }
+        out = latestAgentOutput(src);
+        if (out) oid = outputId(out);
       }
       if (!out) return `"${args.from}" has no output to route`;
 
@@ -653,12 +645,10 @@ async function start(pid) {
   // Flag all workers for core menu auto-approve
   for (const [sid] of workers) api.setAutoApproveMenu(sid, true);
 
-  // Seed lastOutput from .screen for idle workers
   for (const [sid, w] of workers) {
     if (status.get(sid)) continue;
-    const turns = api.getScreenTurns(sid, w.presetId, { raw: true });
-    if (!turns?.length || turns[turns.length - 1].role !== 'agent') continue;
-    const text = turns[turns.length - 1].text.trim().slice(0, 8000);
+    const text = latestAgentOutput(sid);
+    if (!text) continue;
     proj.lastOutput.set(sid, { text, capturedAt: Date.now(), outputId: outputId(text) });
   }
 

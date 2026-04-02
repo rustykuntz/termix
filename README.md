@@ -72,6 +72,13 @@ clideck auto-detects whether each agent is working or idle:
 
 Claude Code works out of the box. Other agents need a one-time setup that clideck walks you through.
 
+Minimum supported agent versions:
+
+- Gemini CLI `v0.36.0+`
+- OpenAI Codex `v0.118.0+`
+- Claude Code `v2.1.90+`
+- OpenCode `v1.2.26+`
+
 ## How It Works
 
 Each agent runs in a real terminal (PTY) on your machine. clideck receives lightweight status signals via OpenTelemetry — it knows *that* an agent is working, not *what* it's working on.

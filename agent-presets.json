@@ -41,7 +41,7 @@
       "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:{{port}}",
       "OTEL_LOGS_EXPORT_INTERVAL": "2000"
     },
-    "telemetrySetup": "For best experience, add to ~/.codex/config.toml:\n\n[otel]\nexporter = { otlp-http = { endpoint = \"http://localhost:{{port}}/v1/logs\", protocol = \"json\" } }",
+    "telemetrySetup": "For best experience, add to ~/.codex/config.toml:\n\n[otel]\nexporter = { otlp-http = { endpoint = \"http://localhost:{{port}}\", protocol = \"json\" } }",
     "telemetryAutoSetup": {
       "label": "Configure automatically"
     }
@@ -58,15 +58,9 @@
     "sessionIdPattern": "Session ID:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
     "outputMarker": "\u2726",
     "telemetryConfigPath": "~/.gemini/settings.json",
-    "telemetryEnv": {
-      "GEMINI_TELEMETRY_ENABLED": "true",
-      "GEMINI_TELEMETRY_TARGET": "local",
-      "GEMINI_TELEMETRY_OTLP_ENDPOINT": "http://localhost:{{port}}",
-      "GEMINI_TELEMETRY_OTLP_PROTOCOL": "http"
-    },
-    "telemetrySetup": "For best experience, add to ~/.gemini/settings.json:\n\n{\n  \"telemetry\": {\n    \"enabled\": true,\n    \"target\": \"local\",\n    \"otlpEndpoint\": \"http://localhost:{{port}}/v1/logs\",\n    \"otlpProtocol\": \"http\",\n    \"logPrompts\": true\n  }\n}",
+    "telemetrySetup": "Required for working/idle status, resume, Autopilot, notifications, and mobile remote.\n\nCliDeck will add BeforeAgent/AfterAgent/SessionEnd/BeforeTool hooks to ~/.gemini/settings.json.",
     "telemetryAutoSetup": {
-      "label": "Configure automatically"
+      "label": "Patch Gemini"
     }
   },
   {

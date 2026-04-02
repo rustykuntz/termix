@@ -338,8 +338,8 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   term.loadAddon(fit);
   term.onData(data => send({ type: 'input', id, data }));
 
-  // [SCREEN-CAPTURE] extract terminal buffer only when idle + render-silent + user-quiet
-  let _screenTimer = null, _renderSilent = false, _lastTyping = 0, _initialCaptureDone = false;
+  // [TRANSCRIPT-CAPTURE] extract terminal buffer only when idle + render-silent + user-quiet
+  let _captureTimer = null, _renderSilent = false, _lastTyping = 0, _initialCaptureDone = false;
   function _sendCapture() {
     const entry = state.terms.get(id);
     if (!entry?.term) return;
@@ -348,8 +348,6 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
     for (let i = 0; i < buf.length; i++) { const line = buf.getLine(i); if (line) lines.push(line.translateToString(true)); }
     send({ type: 'terminal.buffer', id, lines });
   }
-  // Must match storeBuffer()'s isChrome in transcript.js — if storeBuffer would discard every
-  // line, there's no point capturing (and the initial one-shot would be wasted).
   function _isChrome(t) {
     return !t
       || /^[─━═\u2500-\u257f]+$/.test(t)
@@ -368,7 +366,7 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
     }
     return false;
   }
-  function _tryScreenCapture() {
+  function _tryCapture() {
     const entry = state.terms.get(id);
     if (!_renderSilent || Date.now() - _lastTyping < 2000) return;
     // Initial capture: first time render settles with real content, capture regardless of working/idle
@@ -378,21 +376,21 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
       _sendCapture();
       return;
     }
-    if (!entry?.pendingScreenCapture) return;
-    entry.pendingScreenCapture = false;
+    if (!entry?.pendingCapture) return;
+    entry.pendingCapture = false;
     _sendCapture();
   }
   term.onData(() => {
     _lastTyping = Date.now();
     // User typing invalidates pending capture — will re-try after silence
     _renderSilent = false;
-    clearTimeout(_screenTimer);
-    _screenTimer = setTimeout(() => { _renderSilent = true; _tryScreenCapture(); }, 2000);
+    clearTimeout(_captureTimer);
+    _captureTimer = setTimeout(() => { _renderSilent = true; _tryCapture(); }, 2000);
   });
   term.onRender(() => {
     _renderSilent = false;
-    clearTimeout(_screenTimer);
-    _screenTimer = setTimeout(() => { _renderSilent = true; _tryScreenCapture(); }, 2000);
+    clearTimeout(_captureTimer);
+    _captureTimer = setTimeout(() => { _renderSilent = true; _tryCapture(); }, 2000);
   });
   term.onWriteParsed(() => {
     if (Date.now() - _lastTyping < 500) return;
@@ -401,7 +399,13 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   });
 
   // Expose capture function so setStatus can schedule a retry
-  setTimeout(() => { const e = state.terms.get(id); if (e) e.tryScreenCapture = _tryScreenCapture; }, 0);
+  setTimeout(() => {
+    const e = state.terms.get(id);
+    if (e) {
+      e.tryCapture = _tryCapture;
+      e.sendCaptureNow = _sendCapture;
+    }
+  }, 0);
 
   term.open(el);
   attachToTerminal(term);
@@ -597,10 +601,14 @@ function setStatus(id, working) {
 
   // Mark for capture — try immediately (safe: guards will block if not settled),
   // otherwise the render/typing silence watcher will fire when the buffer settles
-  if (wasWorking && !working) { entry.pendingScreenCapture = true; entry.tryScreenCapture?.(); }
+  if (wasWorking && !working) {
+    entry.pendingCapture = true;
+    entry.sendCaptureNow?.();
+    entry.tryCapture?.();
+  }
 
   if (working) {
-    entry.pendingScreenCapture = false; // cancel stale capture if back to working
+    entry.pendingCapture = false; // cancel stale capture if back to working
     if (!entry.workStartedAt) entry.workStartedAt = Date.now();
   }
 

@@ -6,7 +6,6 @@ const ioActivity = require('./activity');
 const activity = new Map(); // sessionId → has received events
 const lastEvent = new Map(); // sessionId → last OTEL event name (+ kind)
 const pendingSetup = new Map(); // sessionId → timer (waiting for first event)
-const pendingIdle = new Map(); // sessionId → timer (PTY silence → idle)
 const codexMenuPoll = new Map(); // sessionId → interval (polling for menu after response.completed)
 const escPendingIdle = new Map(); // sessionId → timer (Esc interrupt → confirm idle after output silence)
 const escSuppressUntil = new Map(); // sessionId → ts (briefly ignore telemetry reassertions after Esc)
@@ -82,14 +81,9 @@ function handleLogs(req, res) {
         // Track last event per session (used by menu detection validation)
         if (eventName) lastEvent.set(resolvedId, eventName + (attrs['event.kind'] ? ':' + attrs['event.kind'] : ''));
 
-        // Status: user_prompt → working
-        // Claude uses hooks; Codex uses notify hook; Gemini uses PTY heuristic
-        const startEvents = new Set(['gemini_cli.user_prompt', 'codex.user_prompt']);
-        if (startEvents.has(eventName)) {
-          cancelPendingIdle(resolvedId);
+        // Status: Codex user_prompt → working. Claude and Gemini use hooks.
+        if (eventName === 'codex.user_prompt') {
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
-          // Gemini uses PTY silence heuristic for idle; Codex idle comes from notify hook
-          if (serviceName !== 'codex_cli_rs') startPendingIdle(resolvedId, serviceName);
         }
 
         // Codex: response.completed → poll for menu until found or timeout
@@ -147,55 +141,13 @@ function cancelPendingSetup(sessionId) {
   }
 }
 
-// PTY activity monitor: 2s silent → idle, 2s active or user_prompt → working.
-// Used by Gemini only — Claude uses hooks, Codex uses sse_event completion.
-// Agent working indicators in PTY output.
-const GEMINI_WORKING_RE = /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/;
-
-function startPendingIdle(id, agent) {
-  if (pendingIdle.has(id)) return; // already monitoring
-  let isIdle = false;
-  let activeStart = 0;
-  const check = setInterval(() => {
-    const lastOut = ioActivity.lastOutputAt(id);
-    const lastIn = ioActivity.lastInputAt(id);
-    // Ignore echo: if last output is within 100ms of last input, treat as silent
-    const agentOut = (lastIn && lastOut - lastIn >= 0 && lastOut - lastIn < 100) ? 0 : lastOut;
-    let silent = (Date.now() - agentOut) >= 2000;
-    // Agent override: if recent output has spinner/working chars, not silent
-    if (silent && (Date.now() - lastOut) < 2000) {
-      const chunk = ioActivity.lastChunk(id);
-      if (GEMINI_WORKING_RE.test(chunk)) silent = false;
-    }
-    if (silent && !isIdle) {
-      isIdle = true;
-      activeStart = 0;
-      broadcastFn?.({ type: 'session.status', id, working: false, source: 'telemetry' });
-    } else if (!silent && isIdle) {
-      if (!activeStart) activeStart = Date.now();
-      if (Date.now() - activeStart >= 2000) {
-        isIdle = false;
-        broadcastFn?.({ type: 'session.status', id, working: true, source: 'telemetry' });
-      }
-    } else if (!silent) {
-      activeStart = 0;
-    }
-  }, 250);
-  pendingIdle.set(id, check);
-}
-
-function cancelPendingIdle(id) {
-  const timer = pendingIdle.get(id);
-  if (timer) { clearInterval(timer); pendingIdle.delete(id); }
-}
-
-// Codex: after response.completed, poll screen capture every 500ms for up to 3s
+// Codex: after response.completed, poll terminal capture every 500ms for up to 3s
 function startCodexMenuPoll(id) {
   cancelCodexMenuPoll(id);
   const started = Date.now();
   const poll = setInterval(() => {
     if (Date.now() - started > 3000) { cancelCodexMenuPoll(id); return; }
-    broadcastFn?.({ type: 'screen.capture', id });
+    broadcastFn?.({ type: 'terminal.capture', id });
   }, 500);
   codexMenuPoll.set(id, poll);
 }
@@ -237,7 +189,6 @@ function cancelEscIdle(id) {
 function clear(id) {
   activity.delete(id);
   lastEvent.delete(id);
-  cancelPendingIdle(id);
   cancelCodexMenuPoll(id);
   cancelEscIdle(id);
   escSuppressUntil.delete(id);
@@ -252,4 +203,4 @@ function hasEvents(id) {
   return activity.has(id);
 }
 
-module.exports = { init, handleLogs, clear, hasEvents, getLastEvent, cancelCodexMenuPoll, watchSession, startPendingIdle, startEscIdle };
+module.exports = { init, handleLogs, clear, hasEvents, getLastEvent, cancelCodexMenuPoll, watchSession, startEscIdle };

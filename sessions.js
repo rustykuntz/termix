@@ -31,7 +31,10 @@ function broadcast(msg) {
   for (const c of clients) if (c.readyState === 1) c.send(raw);
   if (msg.type === 'session.status') {
     const s = sessions.get(msg.id);
-    if (s) s.working = !!msg.working;
+    if (s) {
+      s.working = !!msg.working;
+      s._finalizeOnIdle = !msg.working && msg.source !== 'menu';
+    }
     plugins.notifyStatus(msg.id, msg.working, msg.source);
   }
   for (const fn of broadcastListeners) try { fn(msg); } catch {}
@@ -43,8 +46,8 @@ function buildTelemetryEnv(id, cmd) {
   const bin = binName(cmd.command);
   const preset = PRESETS.find(p => binName(p.command) === bin);
   const telemetryEnabled = cmd.telemetryEnabled ?? (preset?.presetId === 'claude-code');
-  if (!preset?.telemetryEnv || !telemetryEnabled) return {};
-  const env = {};
+  const env = { CLIDECK_SESSION_ID: id };
+  if (!preset?.telemetryEnv || !telemetryEnabled) return env;
   for (const [k, v] of Object.entries(preset.telemetryEnv)) {
     env[k] = v.replace('{{port}}', String(PORT));
   }
@@ -80,9 +83,12 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
   const preset = PRESETS.find(p => binName(p.command) === bin);
   const session = { name, themeId, commandId, cwd, pty: term, chunks: [], chunksSize: 0, sessionToken: savedToken || null, projectId: projectId || null, presetId: preset?.presetId || 'shell', working: undefined };
   sessions.set(id, session);
+  transcript.setFinalizeOnIdle(id, ['claude-code', 'codex', 'gemini-cli', 'opencode'].includes(session.presetId) ? session.presetId : null);
 
-  // Watch for telemetry — if config isn't set up, frontend will prompt
-  if (preset?.telemetrySetup && !(cmd.telemetryEnabled && cmd.telemetryStatus?.ok)) telemetry.watchSession(id, bin);
+  // Always watch telemetry-backed agents so OTLP fallback matching can attach
+  // early events to this session even when the agent omits clideck.session_id.
+  // The receiver itself decides whether to surface a setup prompt.
+  if (preset?.telemetryEnv) telemetry.watchSession(id, bin);
   if (preset?.bridge === 'opencode') opencodeBridge.watchSession(id, cwd);
 
   term.onData((data) => {
@@ -281,15 +287,17 @@ function writeSessionInput(id, data) {
 function input(msg) {
   const data = plugins.transformInput(msg.id, msg.data);
   activity.trackIn(msg.id, data.length);
-  writeSessionInput(msg.id, data);
   const s = sessions.get(msg.id);
   if (!s) return;
   // Menu choice selected → back to working (Enter or digit keys only)
   if (s._menuKey && !s.working && (data === '\r' || /^[1-9]$/.test(data))) {
+    s.pty.write(data);
     s._menuKey = '';
     broadcast({ type: 'session.menu', id: msg.id, choices: [] });
     broadcast({ type: 'session.status', id: msg.id, working: true, source: 'menu-input' });
+    return;
   }
+  writeSessionInput(msg.id, data);
   if (data === '\x1b' && s.working) {
     telemetry.startEscIdle(msg.id);
   }
@@ -401,6 +409,10 @@ function getResumable(cfg) {
 
 function sendBuffers(ws) {
   for (const [id, s] of sessions) {
+    if (['claude-code', 'codex', 'gemini-cli', 'opencode'].includes(s.presetId) && !s.working) {
+      const text = transcript.getReplayText(id, s.presetId);
+      if (text) { ws.send(JSON.stringify({ type: 'session.history', id, text })); continue; }
+    }
     if (s.chunks.length) ws.send(JSON.stringify({ type: 'output', id, data: s.chunks.join('') }));
   }
 }
@@ -436,7 +448,10 @@ function saveSessions(cfg) {
   const data = [...live, ...pending];
 
   writeFileSync(SAVED_PATH, JSON.stringify(data, null, 2));
-  if (skippedNoToken > 0) console.warn(`Skipped ${skippedNoToken} resumable session(s): no session token captured`);
+  if (skippedNoToken > 0 && skippedNoToken !== lastSkippedNoTokenWarn) {
+    console.warn(`Skipped ${skippedNoToken} resumable session(s): no session token captured`);
+  }
+  lastSkippedNoTokenWarn = skippedNoToken || null;
   return data.length;
 }
 
@@ -450,6 +465,7 @@ function loadSessions() {
 
 let autoSaveInterval = null;
 let getConfigFn = null;
+let lastSkippedNoTokenWarn = null;
 
 function startAutoSave(getConfig) {
   getConfigFn = getConfig;

@@ -67,7 +67,13 @@ function connect() {
         break;
       case 'output': {
         const entry = state.terms.get(msg.id);
-        if (entry && !entry.queue(msg.data)) entry.term.write(msg.data);
+        if (entry && !entry.queue(msg.data)) {
+          entry.term.write(msg.data);
+          if (!entry.working) {
+            entry.pendingCapture = true;
+            entry.tryCapture?.();
+          }
+        }
         updatePreview(msg.id);
         markUnread(msg.id);
         break;
@@ -83,8 +89,8 @@ function connect() {
       case 'session.status':
         setStatus(msg.id, msg.working);
         break;
-      // Server requests screen capture (e.g. after PermissionRequest hook)
-      case 'screen.capture': {
+      // Server requests terminal capture (e.g. after PermissionRequest hook)
+      case 'terminal.capture': {
         const ce = state.terms.get(msg.id);
         if (ce?.term) {
           const buf = ce.term.buffer.active;
@@ -92,6 +98,12 @@ function connect() {
           for (let i = 0; i < buf.length; i++) { const line = buf.getLine(i); if (line) lines.push(line.translateToString(true)); }
           send({ type: 'terminal.buffer', id: msg.id, lines });
         }
+        break;
+      }
+      case 'session.history': {
+        const entry = state.terms.get(msg.id);
+        if (entry && !entry.queue(msg.text + '\n')) entry.term.write(msg.text + '\n');
+        updatePreview(msg.id);
         break;
       }
       // Bridge preview text (OpenCode plugin)

@@ -232,8 +232,6 @@ function buildApi(pluginId, pluginDir, state) {
     getRoles() { return JSON.parse(JSON.stringify(getConfigFn?.()?.roles || [])); },
     getProjects() { return JSON.parse(JSON.stringify(getConfigFn?.()?.projects || [])); },
     getTranscript(id, n) { return transcript.getLastTurns(id, n || 20); },
-    getScreenTurns(id, agent, opts) { return transcript.getScreenTurns(id, agent, opts); },
-    getScreen(id) { return transcript.getScreen(id); },
     detectMenu(lines, presetId) { return transcript.detectMenu(lines, presetId); },
 
     addToolbarAction(opts) { state.actions.push({ ...opts, pluginId, slot: 'toolbar' }); },

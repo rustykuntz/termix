@@ -33,6 +33,17 @@ let remoteUpdateCache = null;
 let remoteUpdateCheckedAt = 0;
 const REMOTE_UPDATE_INTERVAL = 3600000;
 
+function compareVersions(a, b) {
+  const pa = String(a || '').split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b || '').split('.').map(n => parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff) return diff;
+  }
+  return 0;
+}
+
 function checkRemoteUpdate(ws) {
   const now = Date.now();
   if (remoteUpdateCache && now - remoteUpdateCheckedAt < REMOTE_UPDATE_INTERVAL) {
@@ -46,7 +57,7 @@ function checkRemoteUpdate(ws) {
     require('child_process').execFile('npm', ['view', 'clideck-remote', 'version'], { shell: shellOpt, timeout: 10000 }, (err2, stdout2) => {
       if (err2) return;
       const latest = stdout2.trim();
-      remoteUpdateCache = { installed, latest, available: latest !== installed };
+      remoteUpdateCache = { installed, latest, available: compareVersions(latest, installed) > 0 };
       remoteUpdateCheckedAt = now;
       if (remoteUpdateCache.available) ws.send(JSON.stringify({ type: 'remote.update', ...remoteUpdateCache }));
     });
@@ -93,7 +104,9 @@ function detectTelemetryConfig(c) {
     } else if (preset.presetId === 'gemini-cli') {
       try {
         const s = JSON.parse(readFileSync(join(home, '.gemini', 'settings.json'), 'utf8'));
-        detected = !!s.telemetry?.enabled && (s.telemetry?.otlpEndpoint || '').includes(`localhost:${port}`);
+        const hooks = s.hooks || {};
+        const has = (arr, route) => arr?.some(h => h.hooks?.some(x => x.command?.includes('gemini-hook.js') && x.command?.includes(` ${route}`)));
+        detected = has(hooks.BeforeAgent, 'start') && has(hooks.AfterAgent, 'stop') && has(hooks.SessionEnd, 'stop') && has(hooks.BeforeTool, 'menu');
       } catch {}
     } else if (preset.presetId === 'opencode') {
       detected = existsSync(join(opencodePluginDir, 'clideck-bridge.js')) || existsSync(join(opencodePluginDir, 'termix-bridge.js'));
@@ -142,10 +155,13 @@ function onConnection(ws) {
         }
         break;
       case 'terminal.buffer': {
-        require('./transcript').storeBuffer(msg.id, msg.lines);
-        sessions.broadcast({ type: 'screen.updated', id: msg.id });
+        const transcript = require('./transcript');
         const sess = sessions.getSessions().get(msg.id);
         if (sess) {
+          if (!sess.working && sess._finalizeOnIdle) {
+            sess._finalizeOnIdle = false;
+            transcript.captureAgentTurn(msg.id, sess.presetId, msg.lines);
+          }
           let choices = require('./transcript').detectMenu(msg.lines, sess.presetId);
           // Codex: only trust menu detection if last OTEL event was response.completed
           if (choices && sess.presetId === 'codex') {
@@ -369,8 +385,7 @@ function onConnection(ws) {
       }
 
       case 'remote.getHistory': {
-        const turns = transcript.getScreenTurns(msg.id, sessions.getSessions().get(msg.id)?.presetId);
-        ws.send(JSON.stringify({ type: 'remote.history', id: msg.id, turns: turns || [] }));
+        ws.send(JSON.stringify({ type: 'remote.history', id: msg.id, turns: transcript.getLastTurns(msg.id, 20) }));
         break;
       }
 
@@ -432,7 +447,8 @@ function applyTelemetryConfig(preset) {
       if (existsSync(configPath)) content = readFileSync(configPath, 'utf8');
       const hasOtel = content.includes('[otel]');
       const hasNotify = content.includes('notify-helper');
-      if (hasOtel && hasNotify) return { success: true, message: 'Already configured' };
+      const hasWrongOtel = content.includes(`endpoint = "http://localhost:${port}/v1/logs"`);
+      if (hasOtel && hasNotify && !hasWrongOtel) return { success: true, message: 'Already configured' };
       if (!hasNotify) {
         const helperPath = join(__dirname, 'bin', 'notify-helper.js').replace(/\\/g, '/');
         const notifyLine = `notify = ["${process.execPath.replace(/\\/g, '/')}", "${helperPath}", "${port}"]\n`;
@@ -444,8 +460,10 @@ function applyTelemetryConfig(preset) {
           content = content + '\n' + notifyLine;
         }
       }
-      if (!hasOtel) {
-        content = content.trimEnd() + `\n\n[otel]\nexporter = { otlp-http = { endpoint = "http://localhost:${port}/v1/logs", protocol = "json" } }\n`;
+      if (hasWrongOtel) {
+        content = content.replace(`endpoint = "http://localhost:${port}/v1/logs"`, `endpoint = "http://localhost:${port}"`);
+      } else if (!hasOtel) {
+        content = content.trimEnd() + `\n\n[otel]\nexporter = { otlp-http = { endpoint = "http://localhost:${port}", protocol = "json" } }\n`;
       }
       mkdirSync(dirname(configPath), { recursive: true });
       writeFileSync(configPath, content);
@@ -458,20 +476,26 @@ function applyTelemetryConfig(preset) {
       if (existsSync(configPath)) {
         try { settings = JSON.parse(readFileSync(configPath, 'utf8')); } catch {}
       }
-      if (settings.telemetry?.enabled && settings.telemetry?.otlpEndpoint) {
+      const hooks = settings.hooks || {};
+      const helperPath = join(__dirname, 'bin', 'gemini-hook.js').replace(/\\/g, '/');
+      const nodePath = process.execPath.replace(/\\/g, '/');
+      const geminiHook = (route) => ({
+        matcher: '*',
+        hooks: [{ type: 'command', command: `"${nodePath}" "${helperPath}" ${port} ${route}`, name: `clideck-${route}`, timeout: 5000 }],
+      });
+      const has = (arr, route) => arr?.some(h => h.hooks?.some(x => x.command?.includes('gemini-hook.js') && x.command?.includes(` ${route}`)));
+      if (has(hooks.BeforeAgent, 'start') && has(hooks.AfterAgent, 'stop') && has(hooks.SessionEnd, 'stop') && has(hooks.BeforeTool, 'menu')) {
         return { success: true, message: 'Already configured' };
       }
-      settings.telemetry = {
-        ...settings.telemetry,
-        enabled: true,
-        target: 'local',
-        otlpEndpoint: `http://localhost:${port}/v1/logs`,
-        otlpProtocol: 'http',
-        logPrompts: true,
-      };
+      if (!has(hooks.BeforeAgent, 'start')) hooks.BeforeAgent = [...(hooks.BeforeAgent || []), geminiHook('start')];
+      if (!has(hooks.AfterAgent, 'stop')) hooks.AfterAgent = [...(hooks.AfterAgent || []), geminiHook('stop')];
+      if (!has(hooks.SessionEnd, 'stop')) hooks.SessionEnd = [...(hooks.SessionEnd || []), geminiHook('stop')];
+      if (!has(hooks.BeforeTool, 'menu')) hooks.BeforeTool = [...(hooks.BeforeTool || []), geminiHook('menu')];
+      settings.hooks = hooks;
+      if (settings.telemetry?.target === 'local' && String(settings.telemetry?.otlpEndpoint || '').includes(`localhost:${port}`)) delete settings.telemetry;
       mkdirSync(dirname(configPath), { recursive: true });
       writeFileSync(configPath, JSON.stringify(settings, null, 2) + '\n');
-      return { success: true, message: 'Added telemetry section to ~/.gemini/settings.json' };
+      return { success: true, message: 'Added CliDeck hooks to ~/.gemini/settings.json' };
     }
 
     if (preset.presetId === 'opencode') {
@@ -526,9 +550,16 @@ function removeTelemetryConfig(preset) {
       if (!existsSync(configPath)) return { success: true, message: 'No config file to clean' };
       let settings = {};
       try { settings = JSON.parse(readFileSync(configPath, 'utf8')); } catch {}
-      delete settings.telemetry;
+      for (const event of ['BeforeAgent', 'AfterAgent', 'SessionEnd', 'BeforeTool']) {
+        const arr = settings.hooks?.[event];
+        if (!arr) continue;
+        settings.hooks[event] = arr.filter(h => !h.hooks?.some(x => x.command?.includes('gemini-hook.js')));
+        if (!settings.hooks[event].length) delete settings.hooks[event];
+      }
+      if (settings.hooks && !Object.keys(settings.hooks).length) delete settings.hooks;
+      if (settings.telemetry?.target === 'local' && String(settings.telemetry?.otlpEndpoint || '').includes('localhost:4000')) delete settings.telemetry;
       writeFileSync(configPath, JSON.stringify(settings, null, 2) + '\n');
-      return { success: true, message: 'Removed telemetry section from ~/.gemini/settings.json' };
+      return { success: true, message: 'Removed CliDeck hooks from ~/.gemini/settings.json' };
     }
 
     if (preset.presetId === 'opencode') {
