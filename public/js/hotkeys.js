@@ -88,6 +88,13 @@ export function unregisterAllForPlugin(pluginId) {
 // Prompt autocomplete (// trigger) runs first, then hotkey dispatch.
 export function attachToTerminal(term) {
   term.attachCustomKeyEventHandler((e) => {
+    // Shift+Enter: send CSI u escape sequence so CLI agents (Claude Code etc.)
+    // can distinguish it from plain Enter and insert a newline.
+    if (e.type === 'keydown' && e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      term.input('\x1b[13;2u', true);
+      return false;
+    }
     const promptResult = handleTerminalKey(e);
     if (promptResult === false) return false;
     if (e.type !== 'keydown') return true;
