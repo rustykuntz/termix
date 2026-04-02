@@ -67,13 +67,7 @@ function connect() {
         break;
       case 'output': {
         const entry = state.terms.get(msg.id);
-        if (entry && !entry.queue(msg.data)) {
-          entry.term.write(msg.data);
-          if (!entry.working) {
-            entry.pendingCapture = true;
-            entry.tryCapture?.();
-          }
-        }
+        if (entry && !entry.queue(msg.data)) entry.term.write(msg.data);
         updatePreview(msg.id);
         markUnread(msg.id);
         break;

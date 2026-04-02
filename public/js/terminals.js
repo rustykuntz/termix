@@ -338,8 +338,8 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
   term.loadAddon(fit);
   term.onData(data => send({ type: 'input', id, data }));
 
-  // [TRANSCRIPT-CAPTURE] extract terminal buffer only when idle + render-silent + user-quiet
-  let _captureTimer = null, _renderSilent = false, _lastTyping = 0, _initialCaptureDone = false;
+  // [TRANSCRIPT-CAPTURE] initial settled capture plus one delayed idle save
+  let _captureTimer = null, _renderSilent = false, _lastTyping = 0, _initialCaptureDone = false, _idleSaveTimer = null;
   function _sendCapture() {
     const entry = state.terms.get(id);
     if (!entry?.term) return;
@@ -376,9 +376,6 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
       _sendCapture();
       return;
     }
-    if (!entry?.pendingCapture) return;
-    entry.pendingCapture = false;
-    _sendCapture();
   }
   term.onData(() => {
     _lastTyping = Date.now();
@@ -404,6 +401,15 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
     if (e) {
       e.tryCapture = _tryCapture;
       e.sendCaptureNow = _sendCapture;
+      e.scheduleIdleCapture = () => {
+        clearTimeout(_idleSaveTimer);
+        _idleSaveTimer = setTimeout(() => {
+          const entry = state.terms.get(id);
+          if (!entry || entry.working) return;
+          _sendCapture();
+        }, 300);
+      };
+      e.cancelIdleCapture = () => clearTimeout(_idleSaveTimer);
     }
   }, 0);
 
@@ -599,16 +605,13 @@ function setStatus(id, working) {
     }
   }
 
-  // Mark for capture — try immediately (safe: guards will block if not settled),
-  // otherwise the render/typing silence watcher will fire when the buffer settles
+  // Save once shortly after idle unless the agent resumes first.
   if (wasWorking && !working) {
-    entry.pendingCapture = true;
-    entry.sendCaptureNow?.();
-    entry.tryCapture?.();
+    entry.scheduleIdleCapture?.();
   }
 
   if (working) {
-    entry.pendingCapture = false; // cancel stale capture if back to working
+    entry.cancelIdleCapture?.();
     if (!entry.workStartedAt) entry.workStartedAt = Date.now();
   }
 
