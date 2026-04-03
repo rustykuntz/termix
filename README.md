@@ -66,14 +66,9 @@ Or just run it once with `npx clideck`. Works on macOS and Windows. Node 18+. Li
 
 **Native terminals** - each session opens into its real terminal. keys go straight to the agent, nothing sits in the middle.
 
-## Supported Agents
+## Supported agents
 
-Claude Code
-Codex
-Gemini CLI
-OpenCode
-Shell
-other terminal tools
+Claude Code, Codex, Gemini CLI, OpenCode, Shell, and any other terminal tool.
 
 ## Also
 
