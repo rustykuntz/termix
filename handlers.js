@@ -101,6 +101,33 @@ checkAvailability();
 let cfg = config.load();
 if (detectTelemetryConfig(cfg)) config.save(cfg);
 
+function extractQuotedPath(command, needle) {
+  if (!command || !needle) return '';
+  const parts = String(command).match(/"([^"]+)"/g) || [];
+  for (const part of parts) {
+    const value = part.slice(1, -1);
+    if (value.includes(needle)) return value;
+  }
+  return '';
+}
+
+function hasExistingHook(arr, hookFile, route) {
+  return !!arr?.some(h => h.hooks?.some(x => {
+    if (!x.command?.includes(hookFile) || !x.command?.includes(` ${route}`)) return false;
+    const hookPath = extractQuotedPath(x.command, hookFile);
+    return !!hookPath && existsSync(hookPath);
+  }));
+}
+
+function codexConfigLooksHealthy(content, port) {
+  if (!content.includes('[otel]') || !content.includes(`localhost:${port}`)) return false;
+  const notifyLine = content.match(/^\s*notify\s*=\s*\[(.+)\]\s*$/m)?.[1] || '';
+  if (!notifyLine.includes('notify-helper')) return false;
+  const quoted = [...notifyLine.matchAll(/"([^"]+)"/g)].map(m => m[1]);
+  const helperPath = quoted.find(v => v.includes('notify-helper'));
+  return !!helperPath && existsSync(helperPath);
+}
+
 function detectTelemetryConfig(c) {
   const home = os.homedir();
   const port = '4000';
@@ -116,24 +143,27 @@ function detectTelemetryConfig(c) {
       try {
         const s = JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8'));
         const hooks = s.hooks || {};
-        const has = (arr, path) => arr?.some(h => h.hooks?.some(x => x.command?.includes('claude-hook.js') && x.command?.includes(` ${path}`)));
-        detected = has(hooks.UserPromptSubmit, 'start') && has(hooks.Stop, 'stop') && has(hooks.StopFailure, 'stop')
-                && has(hooks.PreToolUse, 'menu')
-                && hooks.Notification?.some(h => h.matcher === 'idle_prompt' && h.hooks?.some(x => x.command?.includes('claude-hook.js') && x.command?.includes(' idle')));
+        detected = hasExistingHook(hooks.UserPromptSubmit, 'claude-hook.js', 'start')
+                && hasExistingHook(hooks.Stop, 'claude-hook.js', 'stop')
+                && hasExistingHook(hooks.StopFailure, 'claude-hook.js', 'stop')
+                && hasExistingHook(hooks.PreToolUse, 'claude-hook.js', 'menu')
+                && hooks.Notification?.some(h => h.matcher === 'idle_prompt' && hasExistingHook([h], 'claude-hook.js', 'idle'));
         if (!detected) reason = 'Needs re-patch';
       } catch {}
     } else if (preset.presetId === 'codex') {
       try {
         const content = readFileSync(join(home, '.codex', 'config.toml'), 'utf8');
-        detected = content.includes('[otel]') && /^\s*notify\s*=.*notify-helper/m.test(content) && content.includes(`localhost:${port}`);
+        detected = codexConfigLooksHealthy(content, port);
         if (!detected) reason = 'Needs re-patch';
       } catch {}
     } else if (preset.presetId === 'gemini-cli') {
       try {
         const s = JSON.parse(readFileSync(join(home, '.gemini', 'settings.json'), 'utf8'));
         const hooks = s.hooks || {};
-        const has = (arr, route) => arr?.some(h => h.hooks?.some(x => x.command?.includes('gemini-hook.js') && x.command?.includes(` ${route}`)));
-        detected = has(hooks.BeforeAgent, 'start') && has(hooks.AfterAgent, 'stop') && has(hooks.SessionEnd, 'stop') && has(hooks.BeforeTool, 'menu');
+        detected = hasExistingHook(hooks.BeforeAgent, 'gemini-hook.js', 'start')
+                && hasExistingHook(hooks.AfterAgent, 'gemini-hook.js', 'stop')
+                && hasExistingHook(hooks.SessionEnd, 'gemini-hook.js', 'stop')
+                && hasExistingHook(hooks.BeforeTool, 'gemini-hook.js', 'menu');
         if (!detected) reason = 'Needs re-patch';
       } catch {}
     } else if (preset.presetId === 'opencode') {
