@@ -9,6 +9,7 @@ const pendingSetup = new Map(); // sessionId → timer (waiting for first event)
 const codexMenuPoll = new Map(); // sessionId → interval (polling for menu after response.completed)
 const codexPendingStop = new Map(); // sessionId → ts (notify hook arrived; wait for next response.completed)
 const codexOutputDone = new Map(); // sessionId → ts (fallback if notify never fires)
+const codexPendingIdle = new Map(); // sessionId → timer (tiny settle before committing idle)
 const escPendingIdle = new Map(); // sessionId → timer (Esc interrupt → short grace before forcing idle)
 let broadcastFn = null;
 let sessionsFn = null;
@@ -88,6 +89,14 @@ function handleLogs(req, res) {
         // Track last event per session (used by menu detection validation)
         if (eventName) lastEvent.set(resolvedId, eventName + (attrs['event.kind'] ? ':' + attrs['event.kind'] : ''));
 
+        // Codex can emit a brief completion between tool phases. Keep idle
+        // pending for a tiny settle window and cancel it on any fresh Codex
+        // activity before the idle is committed to UI/notifications.
+        if (serviceName === 'codex_cli_rs' && eventName) {
+          const isTrustedCompletion = eventName === 'codex.sse_event' && attrs['event.kind'] === 'response.completed';
+          if (!isTrustedCompletion) cancelCodexPendingIdle(resolvedId);
+        }
+
         // Status: Codex user_prompt → working. Claude and Gemini use hooks.
         if (eventName === 'codex.user_prompt') {
           codexPendingStop.delete(resolvedId);
@@ -109,13 +118,13 @@ function handleLogs(req, res) {
             // console.log(`[codex] complete matched pending-stop session=${resolvedId.slice(0,8)} age=${Date.now() - pendingStopAt}ms`);
             codexPendingStop.delete(resolvedId);
             codexOutputDone.delete(resolvedId);
-            broadcastFn?.({ type: 'session.status', id: resolvedId, working: false, source: 'telemetry-stop' });
+            scheduleCodexIdle(resolvedId, 'telemetry-stop');
           } else {
             const outputDoneAt = codexOutputDone.get(resolvedId);
             if (outputDoneAt && Date.now() - outputDoneAt <= 5000) {
               // console.log(`[codex] complete matched output-item.done fallback session=${resolvedId.slice(0,8)} age=${Date.now() - outputDoneAt}ms`);
               codexOutputDone.delete(resolvedId);
-              broadcastFn?.({ type: 'session.status', id: resolvedId, working: false, source: 'telemetry-fallback' });
+              scheduleCodexIdle(resolvedId, 'telemetry-fallback');
             } else {
               // console.log(`[codex] response.completed with no notify-stop and no output-item.done fallback session=${resolvedId.slice(0,8)} outputDone=${outputDoneAt ? Date.now() - outputDoneAt + 'ms' : 'none'}`);
             }
@@ -199,6 +208,20 @@ function armCodexStop(id) {
   // console.log(`[codex] pending-stop armed session=${id.slice(0,8)}`);
 }
 
+function scheduleCodexIdle(id, source) {
+  cancelCodexPendingIdle(id);
+  const timer = setTimeout(() => {
+    codexPendingIdle.delete(id);
+    broadcastFn?.({ type: 'session.status', id, working: false, source });
+  }, 300);
+  codexPendingIdle.set(id, timer);
+}
+
+function cancelCodexPendingIdle(id) {
+  const timer = codexPendingIdle.get(id);
+  if (timer) { clearTimeout(timer); codexPendingIdle.delete(id); }
+}
+
 function startEscIdle(id) {
   cancelEscIdle(id);
   const timer = setTimeout(() => {
@@ -217,6 +240,7 @@ function clear(id) {
   activity.delete(id);
   lastEvent.delete(id);
   cancelCodexMenuPoll(id);
+  cancelCodexPendingIdle(id);
   codexPendingStop.delete(id);
   codexOutputDone.delete(id);
   cancelEscIdle(id);

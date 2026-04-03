@@ -33,10 +33,16 @@ function broadcast(msg) {
     const s = sessions.get(msg.id);
     if (s) {
       s.working = !!msg.working;
+      if (msg.working && msg.source === 'hook') {
+        s._resolvedMenuKey = '';
+      }
       // Codex approval flows can pause on a menu and then continue into a normal
       // reply; keep idle finalization enabled there so the completed post-menu
       // answer is not lost. Other agents still suppress transcript finalization on menu.
       s._finalizeOnIdle = !msg.working && msg.source !== 'esc' && (msg.source !== 'menu' || s.presetId === 'codex');
+      // if (s.presetId === 'claude-code') {
+      //   console.log(`[claude] broadcast status session=${msg.id.slice(0,8)} working=${!!msg.working} source=${msg.source} finalizeOnIdle=${!!s._finalizeOnIdle}`);
+      // }
       // if (s.presetId === 'codex') console.log(`[codex] status session=${msg.id.slice(0,8)} working=${!!msg.working} source=${msg.source}`);
     }
     plugins.notifyStatus(msg.id, msg.working, msg.source);
@@ -296,6 +302,8 @@ function input(msg) {
   // Menu choice selected → back to working (Enter or digit keys only)
   if (s._menuKey && !s.working && (data === '\r' || /^[1-9]$/.test(data))) {
     s.pty.write(data);
+    s._resolvedMenuKey = s._menuKey;
+    if (s._menuActiveVersion) s._menuConsumedVersion = s._menuActiveVersion;
     s._menuKey = '';
     broadcast({ type: 'session.menu', id: msg.id, choices: [] });
     broadcast({ type: 'session.status', id: msg.id, working: true, source: 'menu-input' });

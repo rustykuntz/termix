@@ -98,7 +98,7 @@ function connect() {
           const buf = ce.term.buffer.active;
           const lines = [];
           for (let i = 0; i < buf.length; i++) { const line = buf.getLine(i); if (line) lines.push(line.translateToString(true)); }
-          send({ type: 'terminal.buffer', id: msg.id, lines });
+          send({ type: 'terminal.buffer', id: msg.id, lines, menuVersion: msg.menuVersion });
         }
         break;
       }

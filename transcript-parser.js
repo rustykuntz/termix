@@ -3,6 +3,13 @@ function parseTurns(presetId, lines, users) {
   return collapseAgentTurns(parser ? parser(lines, users) : anchorParse(lines, users));
 }
 
+function parseLastAgentOnly(presetId, lines) {
+  const turns = collapseAgentTurns((parsers[presetId] || (() => null))(lines, null));
+  if (!turns?.length) return null;
+  const last = [...turns].reverse().find(t => t.role === 'agent');
+  return last || null;
+}
+
 const parsers = {
   'claude-code': (lines, users) => {
     const known = users?.length ? new Set(users) : null;
@@ -125,4 +132,4 @@ function collapseAgentTurns(turns) {
   return out;
 }
 
-module.exports = { parseTurns };
+module.exports = { parseTurns, parseLastAgentOnly };

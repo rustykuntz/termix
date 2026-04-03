@@ -146,23 +146,37 @@ const server = http.createServer((req, res) => {
         const payload = JSON.parse(body);
         const route = req.url.slice('/hook/claude/'.length);
         const sessionId = payload.session_id;
-        console.log(`[claude] hook ${route} session=${sessionId?.slice(0,8) || '?'}`);
         const allSessions = sessions.getSessions();
         const clideckId = payload.clideck_id && allSessions.has(payload.clideck_id)
           ? payload.clideck_id
           : sessionId
             ? [...allSessions].find(([, s]) => s.sessionToken === sessionId)?.[0]
             : null;
+        // console.log(`[claude] hook ${route} clideck=${payload.clideck_id?.slice(0,8) || 'none'} session=${sessionId?.slice(0,8) || 'none'} match=${clideckId?.slice(0,8) || 'none'}`);
         if (clideckId) {
+          const sess = allSessions.get(clideckId);
           if (route === 'start') {
+            // console.log(`[claude] status working=true source=hook session=${clideckId.slice(0,8)}`);
             sessions.broadcast({ type: 'session.status', id: clideckId, working: true, source: 'hook' });
           } else if (route === 'stop' || route === 'idle') {
+            // console.log(`[claude] status working=false source=hook session=${clideckId.slice(0,8)}`);
             sessions.broadcast({ type: 'session.status', id: clideckId, working: false, source: 'hook' });
+            // After an approval menu, Claude can already be idle before the real
+            // stop hook arrives. In that case there is no new working→idle edge
+            // on the client, so force one final capture from the true stop signal.
+            if (route === 'stop' && sess && !sess.working) {
+              // console.log(`[claude] stop capture session=${clideckId.slice(0,8)} source=claude-stop`);
+              setTimeout(() => sessions.broadcast({ type: 'terminal.capture', id: clideckId }), 500);
+            }
           } else if (route === 'menu') {
             // PreToolUse: trigger terminal capture — detectMenu will set idle if a choice menu is visible
-            console.log(`[terminal.capture] session=${clideckId.slice(0,8)} source=claude-menu`);
-            setTimeout(() => sessions.broadcast({ type: 'terminal.capture', id: clideckId }), 500);
+            const menuVersion = sess ? ((sess._menuVersion || 0) + 1) : 1;
+            if (sess) sess._menuVersion = menuVersion;
+            // console.log(`[claude] menu capture session=${clideckId.slice(0,8)} source=claude-menu version=${menuVersion}`);
+            setTimeout(() => sessions.broadcast({ type: 'terminal.capture', id: clideckId, menuVersion }), 500);
           }
+        } else {
+          // console.log(`[claude] hook ${route} no-match`);
         }
       } catch {}
       res.writeHead(200).end('{}');

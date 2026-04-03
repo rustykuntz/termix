@@ -203,6 +203,9 @@ function onConnection(ws) {
         if (sess) {
           if (!sess.working && sess._finalizeOnIdle) {
             sess._finalizeOnIdle = false;
+            // if (sess.presetId === 'claude-code') {
+            //   console.log(`[claude] terminal.buffer finalize session=${msg.id.slice(0,8)} lines=${msg.lines?.length || 0}`);
+            // }
             transcript.captureAgentTurn(msg.id, sess.presetId, msg.lines);
           }
           let choices = require('./transcript').detectMenu(msg.lines, sess.presetId);
@@ -216,15 +219,31 @@ function onConnection(ws) {
               console.log(`[codex] menu accepted session=${msg.id.slice(0,8)}`);
             }
           }
+          if (choices && sess.presetId === 'claude-code' && msg.menuVersion && (sess._menuConsumedVersion || 0) >= msg.menuVersion) {
+            // console.log(`[claude] menu ignored stale version=${msg.menuVersion} consumed=${sess._menuConsumedVersion || 0} session=${msg.id.slice(0,8)}`);
+            choices = null;
+          }
+          let key = choices ? JSON.stringify(choices) : '';
+          // Claude can keep rendering the same approval menu briefly after Enter.
+          // Once that exact menu was approved, ignore repeated detections of the
+          // same signature until the next real turn starts.
+          if (choices && sess.presetId === 'claude-code' && key === (sess._resolvedMenuKey || '')) {
+            // console.log(`[claude] menu ignored resolved key session=${msg.id.slice(0,8)}`);
+            choices = null;
+            key = '';
+          }
           // Auto-approve: send Enter immediately when menu detected
           if (choices && plugins.shouldAutoApproveMenu(msg.id)) {
-            sessions.input({ id: msg.id, data: '\r' });
+            setTimeout(() => sessions.input({ id: msg.id, data: '\r' }), 500);
           }
-          const key = choices ? JSON.stringify(choices) : '';
           if (key !== (sess._menuKey || '')) {
             sess._menuKey = key;
             sessions.broadcast({ type: 'session.menu', id: msg.id, choices: choices || [] });
             if (choices) {
+              if (sess.presetId === 'claude-code' && msg.menuVersion) sess._menuActiveVersion = msg.menuVersion;
+              // if (sess.presetId === 'claude-code') {
+              //   console.log(`[claude] menu detected session=${msg.id.slice(0,8)} choices=${choices.length} version=${msg.menuVersion || 0}`);
+              // }
               plugins.notifyMenu(msg.id, choices);
               if (sess.presetId === 'codex') require('./telemetry-receiver').cancelCodexMenuPoll(msg.id);
               sessions.broadcast({ type: 'session.status', id: msg.id, working: false, source: 'menu' });
@@ -335,6 +354,7 @@ function onConnection(ws) {
         }
         cfg.projects = cfg.projects.filter(p => p.id !== msg.id);
         config.save(cfg);
+        plugins.notifyConfig(cfg);
         sessions.broadcast({ type: 'config', config: configForClient() });
         break;
       }

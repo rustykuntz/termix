@@ -54,6 +54,7 @@ const outputHooks = [];
 const statusHooks = [];
 const transcriptHooks = [];
 const menuHooks = [];
+const configHooks = [];
 const sessionStatus = new Map(); // sessionId → boolean (dedup multi-client reports)
 const autoApproveMenus = new Set(); // sessionIds where menus should be auto-approved
 const frontendHandlers = new Map();
@@ -68,7 +69,7 @@ const settingsChangeHandlers = new Map(); // pluginId → [fn]
 const sessionPills = new Map(); // pillId → { pluginId, id, title, projectId, working, statusText, icon, logs[] }
 
 function removeHooks(pluginId) {
-  for (const arr of [inputHooks, outputHooks, statusHooks, transcriptHooks, menuHooks]) {
+  for (const arr of [inputHooks, outputHooks, statusHooks, transcriptHooks, menuHooks, configHooks]) {
     for (let i = arr.length - 1; i >= 0; i--) {
       if (arr[i].pluginId === pluginId) arr.splice(i, 1);
     }
@@ -193,6 +194,7 @@ function buildApi(pluginId, pluginDir, state) {
     onStatusChange(fn) { statusHooks.push({ pluginId, fn }); },
     onTranscriptEntry(fn) { transcriptHooks.push({ pluginId, fn }); },
     onMenuDetected(fn) { menuHooks.push({ pluginId, fn }); },
+    onConfigChange(fn) { configHooks.push({ pluginId, fn }); },
 
     sendToFrontend(event, data = {}) {
       broadcastFn?.({ ...data, type: `plugin.${pluginId}.${event}` });
@@ -332,8 +334,9 @@ function notifyOutput(id, data) {
 }
 
 function notifyStatus(id, working, source) {
-  if (sessionStatus.get(id) === working) return;
-  sessionStatus.set(id, working);
+  const next = `${working ? 1 : 0}:${source || ''}`;
+  if (sessionStatus.get(id) === next) return;
+  sessionStatus.set(id, next);
   for (const h of statusHooks) {
     try { h.fn(id, working, source); }
     catch (e) { console.error(`[plugin:${h.pluginId}] status error: ${e.message}`); }
@@ -351,6 +354,13 @@ function notifyMenu(id, choices) {
   for (const h of menuHooks) {
     try { h.fn(id, choices); }
     catch (e) { console.error(`[plugin:${h.pluginId}] menu error: ${e.message}`); }
+  }
+}
+
+function notifyConfig(cfg) {
+  for (const h of configHooks) {
+    try { h.fn(cfg); }
+    catch (e) { console.error(`[plugin:${h.pluginId}] config error: ${e.message}`); }
   }
 }
 
@@ -550,7 +560,7 @@ function removePlugin(pluginId) {
 module.exports = {
   PLUGINS_DIR, BUNDLED_IDS,
   init, shutdown,
-  transformInput, notifyOutput, notifyStatus, notifyTranscript, notifyMenu, clearStatus, isWorking, shouldAutoApproveMenu,
+  transformInput, notifyOutput, notifyStatus, notifyTranscript, notifyMenu, notifyConfig, clearStatus, isWorking, shouldAutoApproveMenu,
   handleMessage, updateSetting, getInfo, resolveFile, installPlugin, removePlugin,
   getPills, getPillLogs,
 };

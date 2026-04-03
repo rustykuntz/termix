@@ -20,6 +20,15 @@ const lastAgentText = {};
 let broadcast = null;
 let notifyPlugin = null;
 
+function tlog(id, msg) {
+  // console.log(`[transcript:${id.slice(0,8)}] ${msg}`);
+}
+
+function clog(id, msg) {
+  if (finalizePreset[id] !== 'claude-code') return;
+  // console.log(`[claude:transcript:${id.slice(0,8)}] ${msg}`);
+}
+
 function init(bc, validIds, pluginNotify) {
   broadcast = bc;
   notifyPlugin = pluginNotify || null;
@@ -52,6 +61,8 @@ function rewrite(id) {
   writeFileSync(fpath(id), entries.map(e => JSON.stringify(e)).join('\n') + (entries.length ? '\n' : ''));
   cache[id] = entries.map(e => e.text).join('\n');
   if (cache[id].length > MAX_CACHE) cache[id] = cache[id].slice(-MAX_CACHE);
+  tlog(id, `rewrite entries=${entries.length} last=${entries.length ? entries[entries.length - 1].role : 'none'}`);
+  clog(id, `rewrite entries=${entries.length} last=${entries.length ? entries[entries.length - 1].role : 'none'}`);
 }
 
 function store(id, role, text) {
@@ -59,9 +70,11 @@ function store(id, role, text) {
   if (finalizePreset[id]) {
     if (!entriesById[id]) entriesById[id] = [];
     const entry = { ts: Date.now(), role, text, ...(prefix && { prefix }) };
+    tlog(id, `store role=${role} finalize=${finalizePreset[id]} raw=${JSON.stringify(String(text).slice(0, 160))}`);
     builder.addEntry(entriesById[id], entry, finalizePreset[id]);
     rewrite(id);
   } else {
+    tlog(id, `store role=${role} append raw=${JSON.stringify(String(text).slice(0, 160))}`);
     appendFile(fpath(id), JSON.stringify({ ts: Date.now(), role, text, ...(prefix && { prefix }) }) + '\n', () => {});
     if (!cache[id]) cache[id] = '';
     cache[id] += '\n' + text;
@@ -146,15 +159,23 @@ function flush(id) {
 function parseTurnsFromLines(id, agent, lines, opts) {
   const turns = parser.parseTurns(agent, lines, getUsers(id));
   if (!opts?.raw && turns?.length && turns[turns.length - 1].role === 'user') turns.pop();
+  tlog(id, `parse agent=${agent} lines=${lines?.length || 0} turns=${turns?.map(t => t.role).join(',') || 'none'}`);
   return turns?.length >= 2 ? turns : null;
 }
 
 function captureAgentTurn(id, agent, lines) {
   if (!finalizePreset[id]) return;
   const turns = parseTurnsFromLines(id, agent, lines);
-  const last = turns?.length ? turns[turns.length - 1] : null;
+  // Finalized capture should not depend on the viewport still containing the
+  // matching user prompt line; if the full turn structure is gone, fall back to
+  // the last visible agent block alone.
+  const last = turns?.length ? turns[turns.length - 1] : parser.parseLastAgentOnly(agent, lines);
+  if (last) tlog(id, `capture lastRole=${last.role} raw=${JSON.stringify(String(last.text).slice(0, 200))}`);
+  if (last) clog(id, `capture lastRole=${last.role} raw=${JSON.stringify(String(last.text).slice(0, 200))}`);
   const text = last?.role === 'agent' ? builder.cleanAgentText(finalizePreset[id], last.text) : '';
-  if (!text || text === lastAgentText[id]) return;
+  tlog(id, `capture cleaned=${JSON.stringify(String(text).slice(0, 200))}`);
+  if (!text) { tlog(id, 'capture skip empty-clean'); clog(id, 'capture skip empty-clean'); return; }
+  if (text === lastAgentText[id]) { tlog(id, 'capture skip duplicate-clean'); clog(id, 'capture skip duplicate-clean'); return; }
   lastAgentText[id] = text;
   store(id, 'agent', text);
 }
@@ -162,7 +183,12 @@ function captureAgentTurn(id, agent, lines) {
 function captureFinalAgentText(id, presetId, text) {
   if (!finalizePreset[id]) return;
   const clean = builder.cleanAgentText(presetId || finalizePreset[id], text);
-  if (!clean || clean === lastAgentText[id]) return;
+  tlog(id, `captureFinal raw=${JSON.stringify(String(text).slice(0, 200))}`);
+  tlog(id, `captureFinal cleaned=${JSON.stringify(String(clean).slice(0, 200))}`);
+  clog(id, `captureFinal raw=${JSON.stringify(String(text).slice(0, 200))}`);
+  clog(id, `captureFinal cleaned=${JSON.stringify(String(clean).slice(0, 200))}`);
+  if (!clean) { tlog(id, 'captureFinal skip empty-clean'); clog(id, 'captureFinal skip empty-clean'); return; }
+  if (clean === lastAgentText[id]) { tlog(id, 'captureFinal skip duplicate-clean'); clog(id, 'captureFinal skip duplicate-clean'); return; }
   lastAgentText[id] = clean;
   store(id, 'agent', clean);
 }
