@@ -9,7 +9,11 @@ export function init(pluginApi) {
   api.onMessage('started', (msg) => {
     activeProjects.add(msg.projectId);
     updateToggle(msg.projectId, true);
-    api.toast('Autopilot started');
+    api.toast('Keep this browser tab active and prevent sleep while Autopilot runs.', {
+      title: 'Autopilot started',
+      type: 'warn',
+      duration: 5000,
+    });
   });
 
   api.onMessage('stopped', (msg) => {

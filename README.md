@@ -1,101 +1,92 @@
-<img src="public/img/clideck-logo-icon.png" width="48" alt="clideck logo">
+<p align="center">
+  <img src="public/img/clideck-logo-icon.png" width="64" alt="clideck logo">
+</p>
 
-# clideck
+<h1 align="center">clideck</h1>
 
-> **Formerly `termix-cli`** — if you arrived here from an old link, you're in the right place. The project has been renamed to **CliDeck**. Update your install: `npm install -g clideck`
+<p align="center">
+  one screen for AI coding agents.
+  <br><br>
+  <a href="https://clideck.dev">Website</a> · <a href="https://docs.clideck.dev">Docs</a> · <a href="https://youtu.be/hICrtjGAeDk">Demo</a>
+</p>
 
-Manage your AI agents like WhatsApp chats. Assign roles, let Autopilot route work between them, check in from your phone.
+<p align="center">
+  <a href="https://github.com/rustykuntz/clideck/stargazers">
+    <img src="https://img.shields.io/github/stars/rustykuntz/clideck?style=social" alt="stars">
+  </a>
+  <a href="https://www.npmjs.com/package/clideck">
+    <img src="https://img.shields.io/npm/v/clideck" alt="npm version">
+  </a>
+</p>
 
-[Documentation](https://docs.clideck.dev/) | [Video Demo](https://youtu.be/hICrtjGAeDk) | [Website](https://clideck.dev/)
+<!-- TODO: Replace with a ~10 second GIF showing: open clideck,
+     sidebar with multiple agents across projects, click between them,
+     one working one idle. No narration needed. -->
 
-![clideck dashboard](assets/clideck-themes.jpg)
+<p align="center">
+  <img src="assets/clideck-themes.jpg" width="720" alt="clideck dashboard">
+</p>
 
-You run Claude Code, Codex, Gemini CLI in separate terminals. You alt-tab between them, forget which one finished, lose sessions when you close the lid.
+clideck is a local app for running multiple AI coding agents without juggling terminals. Claude Code, Codex, Gemini CLI, and OpenCode all live in one browser window with a chat-style sidebar, live status, message previews, session resume, and projects to keep things organized. an autopilot routes work between agents automatically, and an E2E encrypted mobile relay gives full control over all agents from a phone.
 
-clideck puts all your agents in one screen — a sidebar with every session, live status, last message preview, and timestamps. Click a session, you're in its terminal. Exactly like switching between chats.
+the main problem with using multiple agents is not starting them. it is managing them. terminals pile up, finished work gets missed, good sessions disappear after a restart. clideck does not sit in the middle rewriting prompts or output - it only watches lightweight status signals (OpenTelemetry) so it can tell which agent is working, which is idle, and which is waiting. everything runs locally, no data leaves your machine.
 
-Give each agent a role (Programmer, Reviewer, Product Manager), turn on Autopilot, and walk away — it routes output between agents automatically until the task is done or it needs you. Check progress from your phone with a QR scan.
+## Why this exists
 
-Native terminals. Your keystrokes go straight to the agent, nothing in between. clideck never reads your prompts or output.
+Terminal multiplexers are great at panes. clideck is about conversations.
 
-## Quick Start
+A pane grid is flat. agent work usually is not. projects, roles, previews, timestamps, notifications, resume, and sometimes a bit of routing between specialists all fit more naturally into a chat app layout. it also maps naturally to mobile, so the same mental model works on desktop and phone.
 
-```bash
-npx clideck
-```
-
-Open [http://localhost:4000](http://localhost:4000). Click **+**, pick an agent and optionally a project and role, start working.
-
-New users get 3 built-in roles (Programmer, Reviewer, Product Manager) and 3 starter prompts in the prompt library.
-
-Or install globally:
+## Quick start
 
 ```bash
 npm install -g clideck
 clideck
 ```
 
-## What You Get
+Open [localhost:4000](http://localhost:4000). Click **+**, pick an agent, start working.
 
-- **Roles** — define reusable agent identities (Programmer, Reviewer, PM) and assign them when creating sessions. Instructions are injected into the agent automatically.
-- **Autopilot** — project-level workflow routing. Watches your role-assigned agents, waits for them to finish, forwards output to the next specialist. Fingerprints each output, tracks handoff history, and guards against repeat loops. Supports 8 LLM providers (Anthropic, OpenAI, Google, Groq, xAI, Mistral, OpenRouter, Cerebras). Notifies you when work is complete or blocked.
-- **Mobile access** — check on your agents from your phone with a QR scan. E2E encrypted.
-- **Live working/idle status** — see which agent is thinking and which is waiting for you, without checking each terminal
-- **Session resume** — close clideck, reopen it tomorrow, pick up where you left off
-- **Notifications** — browser and sound alerts when an agent finishes or needs input
-- **Message previews** — latest output from each agent, right in the sidebar
-- **Projects** — group sessions by project with drag-and-drop
-- **Search** — find any session by name or scroll back through transcript content
-- **Prompt Library** — save reusable prompts, type `//` in any terminal to paste them
-- **Plugins** — full server + client API with hooks for input, output, status, transcript, and menus. Programmatic session control, toolbar and project actions, session pills, and a settings UI. Ships with Voice Input, Trim Clip, and Autopilot — or build your own.
-- **15 themes** — dark and light, plus custom theme support
+Or just run it once with `npx clideck`. Works on macOS and Windows. Node 18+. Linux: untested - if you try it, [open an issue](https://github.com/rustykuntz/clideck/issues).
 
-## Mobile Access
+## What makes it useful
 
-Start a task on your laptop, walk away, check progress from your phone. See who's working, who's idle, who needs input. Send messages, answer choice menus, browse conversation history, and resume sessions — all from the browser on your phone.
+**Live status** - see which agent is working and which is waiting. Status detection for Claude Code, Codex, Gemini CLI, and OpenCode.
 
-Pair with one QR scan, no account needed. End-to-end encrypted with AES-256-GCM — the relay sees only opaque blobs. Your code never leaves your machines.
+**Session resume** - close the lid, reopen tomorrow, pick up where things left off. each agent's session ID is captured automatically.
 
-Mobile access is provided by [`clideck-remote`](https://www.npmjs.com/package/clideck-remote), a separate optional package. Install it with `npm install -g clideck-remote`.
+**Roles** - give agents reusable identities like programmer, reviewer, or product manager. prompts are injected automatically when a session starts.
+
+**Autopilot** - enable autopilot on a project, walk away. it watches for one agent to finish, hands the output to the next one, and keeps going until the work is done or blocked. this is the part that makes sleep possible. routes content verbatim, no rewriting or summarizing. fingerprints each output and tracks handoff history to guard against repeat loops. ~50 output tokens per routing decision. supports Anthropic, OpenAI, Google, Groq, xAI, Mistral, OpenRouter, Cerebras.
+
+<p align="center">
+  <img src="assets/autopilot.gif" width="720" alt="Autopilot routing work between agents">
+</p>
+
+**Mobile remote** - the agents keep running on the local machine. status, prompts, history, and replies stay available from a phone while away. E2E encrypted, no account needed.
+
+**Native terminals** - each session opens into its real terminal. keys go straight to the agent, nothing sits in the middle.
 
 ## Supported Agents
 
-clideck auto-detects whether each agent is working or idle:
+Claude Code
+Codex
+Gemini CLI
+OpenCode
+Shell
+other terminal tools
 
-| Agent | Status detection | Setup |
-|-------|-----------------|-------|
-| **Claude Code** | Automatic | Nothing to configure |
-| **Codex** | Automatic | One-click setup in clideck |
-| **Gemini CLI** | Automatic | One-click setup in clideck |
-| **OpenCode** | Via plugin bridge | One-click setup in clideck |
-| **Shell** | I/O activity only | None |
+## Also
 
-Claude Code works out of the box. Other agents need a one-time setup that clideck walks you through.
+- **Projects** - group sessions, drag and drop
+- **Prompt library** - save reusable prompts, type `//` to paste
+- **Search** - find sessions or scroll through transcripts
+- **Plugins** - server + client API. ships with Voice Input, Trim Clip, and Autopilot. build your own
+- **15 themes** - dark, light, or make your own
+- **Notifications** - browser + sound alerts when agents finish
 
-Minimum supported agent versions:
+## Docs
 
-- Gemini CLI `v0.36.0+`
-- OpenAI Codex `v0.118.0+`
-- Claude Code `v2.1.90+`
-- OpenCode `v1.2.26+`
-
-## How It Works
-
-Each agent runs in a real terminal (PTY) on your machine. clideck receives lightweight status signals via OpenTelemetry — it knows *that* an agent is working, not *what* it's working on.
-
-Autopilot routes existing agent output between agents verbatim — it does not rewrite or summarize the routed content.
-
-Everything runs locally. No data is collected, transmitted, or stored outside your machine.
-
-## Platform Support
-
-Tested on **macOS** and **Windows**. Works in any modern browser. Linux: untested — if you try it, open an issue.
-
-## Documentation
-
-Full setup guides, agent configuration, and plugin development:
-
-**[docs.clideck.dev](https://docs.clideck.dev/)**
+Guides, agent setup, plugin development: **[docs.clideck.dev](https://docs.clideck.dev)**
 
 ## Acknowledgments
 
@@ -103,4 +94,4 @@ Built with [xterm.js](https://xtermjs.org/).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).

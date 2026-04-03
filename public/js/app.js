@@ -611,7 +611,12 @@ function openPrevSessionsMenu(anchorEl) {
   const menu = document.createElement('div');
   menu.className = 'fixed z-[400] min-w-[160px] bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/40 py-1';
 
-  const dormantIds = state.resumable.filter(s => !s.projectId).map(s => s.id);
+  // Clear exactly the dormant sessions currently rendered in "Previous Sessions".
+  // This keeps the action aligned with the UI even if a session has a stale projectId
+  // that no longer resolves to a real project group.
+  const dormantIds = [...document.querySelectorAll('#resumable-section [data-resumable-id]')]
+    .map(el => el.dataset.resumableId)
+    .filter(Boolean);
 
   menu.innerHTML = `
     <button class="pv-action flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors text-left" data-action="clear-dormant">
