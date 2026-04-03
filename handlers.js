@@ -59,19 +59,26 @@ function getInstalledVersion(bin) {
 function checkRemoteUpdate(ws) {
   const now = Date.now();
   if (remoteUpdateCache && now - remoteUpdateCheckedAt < REMOTE_UPDATE_INTERVAL) {
-    if (remoteUpdateCache.available) ws.send(JSON.stringify({ type: 'remote.update', ...remoteUpdateCache }));
+    ws.send(JSON.stringify({ type: 'remote.update', checked: true, ...remoteUpdateCache }));
     return;
   }
   const shellOpt = process.platform === 'win32';
   require('child_process').execFile('npm', ['list', '-g', 'clideck-remote', '--json', '--depth=0'], { shell: shellOpt, timeout: 10000 }, (err, stdout) => {
     let installed;
-    try { installed = JSON.parse(stdout).dependencies['clideck-remote'].version; } catch { return; }
+    try { installed = JSON.parse(stdout).dependencies['clideck-remote'].version; }
+    catch {
+      ws.send(JSON.stringify({ type: 'remote.update', available: false, checked: false }));
+      return;
+    }
     require('child_process').execFile('npm', ['view', 'clideck-remote', 'version'], { shell: shellOpt, timeout: 10000 }, (err2, stdout2) => {
-      if (err2) return;
+      if (err2) {
+        ws.send(JSON.stringify({ type: 'remote.update', installed, available: false, checked: false }));
+        return;
+      }
       const latest = stdout2.trim();
       remoteUpdateCache = { installed, latest, available: compareVersions(latest, installed) > 0 };
       remoteUpdateCheckedAt = now;
-      if (remoteUpdateCache.available) ws.send(JSON.stringify({ type: 'remote.update', ...remoteUpdateCache }));
+      ws.send(JSON.stringify({ type: 'remote.update', checked: true, ...remoteUpdateCache }));
     });
   });
 }

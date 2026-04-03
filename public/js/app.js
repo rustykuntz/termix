@@ -291,7 +291,12 @@ function connect() {
         handleInstallDone(msg.success);
         break;
       case 'remote.update':
-        showRemoteUpdateToast(msg);
+        remoteUpdateInfo = msg?.available ? msg : null;
+        if (msg?.available) showRemoteUpdateToast(msg);
+        if (remotePreflight?.pending) {
+          remotePreflight.updateSeen = true;
+          finishRemotePreflight();
+        }
         break;
       default:
         if (msg.type?.startsWith('plugin.')) dispatchPluginMessage(msg);
@@ -1046,6 +1051,8 @@ let remoteModalOpen = false;
 let remoteStatusPoll = null;
 let remoteConnectedAt = null;
 let remoteStatsTimer = null;
+let remoteUpdateInfo = null;
+let remotePreflight = null;
 
 function startRemotePoll() {
   stopRemotePoll();
@@ -1063,6 +1070,43 @@ function setRemotePane(pane) {
   for (const [k, el] of Object.entries(remotePanes)) {
     el.classList.toggle('hidden', k !== pane);
   }
+}
+
+function showRemoteIntro(opts = {}) {
+  const title = document.getElementById('remote-intro-title');
+  const text = document.getElementById('remote-intro-text');
+  const foot = document.getElementById('remote-intro-foot');
+  const btn = document.getElementById('remote-add');
+  title.textContent = opts.title || 'CliDeck Mobile Remote';
+  text.textContent = opts.text || 'Control your AI agents from your phone. See live status, send messages, and get notifications — all end-to-end encrypted.';
+  foot.innerHTML = opts.foot || 'Installs the <code class="text-slate-500">clideck-remote</code> package via npm';
+  btn.textContent = opts.button || 'Add to CliDeck';
+  setRemotePane('intro');
+}
+
+function finishRemotePreflight() {
+  if (!remotePreflight?.pending || !remotePreflight.statusSeen || !remotePreflight.updateSeen) return;
+  remotePreflight = null;
+  if (!remoteInstalled) {
+    showRemoteIntro();
+    return;
+  }
+  if (remoteUpdateInfo?.available) {
+    showRemoteIntro({
+      title: 'Update Required',
+      text: `Version ${remoteUpdateInfo.latest} is available. Update CliDeck Remote to continue with mobile pairing on this machine.`,
+      foot: `Installed: <code class="text-slate-500">${esc(remoteUpdateInfo.installed)}</code> · Latest: <code class="text-slate-500">${esc(remoteUpdateInfo.latest)}</code>`,
+      button: 'Update to Continue',
+    });
+    return;
+  }
+  if (remoteState === 'idle') {
+    remoteState = 'connecting';
+    setRemotePane('connecting');
+    send({ type: 'remote.pair' });
+    return;
+  }
+  setRemotePane(remoteState === 'paired' ? 'active' : remoteState === 'waiting' ? 'qr' : 'connecting');
 }
 
 function openRemoteModal() {
@@ -1192,6 +1236,10 @@ function handleRemoteStatus(msg) {
     if (wasPaired) { stopRemoteStats(); setRemoteLock(false); }
   }
   updateRemoteButton();
+  if (remotePreflight?.pending) {
+    remotePreflight.statusSeen = true;
+    finishRemotePreflight();
+  }
 }
 
 function handleRemotePaired(msg) {
@@ -1232,6 +1280,7 @@ function appendInstallLog(text) {
 function handleInstallDone(success) {
   if (success) {
     remoteInstalled = true;
+    remoteUpdateInfo = null;
     // Installed — go straight to pairing
     remoteState = 'connecting';
     setRemotePane('connecting');
@@ -1297,20 +1346,15 @@ btnRemote.addEventListener('click', () => {
   if (remoteModalOpen && remoteState !== 'paired') { closeRemoteModal(); return; }
   if (remoteModalOpen) return; // paired — can't dismiss
   if (!remoteInstalled) {
-    setRemotePane('intro');
+    showRemoteIntro();
     document.getElementById('remote-install-log').textContent = '';
     openRemoteModal();
     return;
   }
-  if (remoteState === 'idle') {
-    remoteState = 'connecting';
-    setRemotePane('connecting');
-    openRemoteModal();
-    send({ type: 'remote.pair' });
-  } else {
-    setRemotePane(remoteState === 'paired' ? 'active' : remoteState === 'waiting' ? 'qr' : 'connecting');
-    openRemoteModal();
-  }
+  remotePreflight = { pending: true, statusSeen: false, updateSeen: false };
+  setRemotePane('connecting');
+  openRemoteModal();
+  send({ type: 'remote.status' });
 });
 
 // Install button
