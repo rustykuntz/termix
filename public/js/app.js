@@ -1084,6 +1084,15 @@ function showRemoteIntro(opts = {}) {
   setRemotePane('intro');
 }
 
+function showRemoteUpdateRequired() {
+  showRemoteIntro({
+    title: 'Update Required',
+    text: `Version ${remoteUpdateInfo.latest} is available. Update CliDeck Remote to continue with mobile pairing on this machine.`,
+    foot: `Installed: <code class="text-slate-500">${esc(remoteUpdateInfo.installed)}</code> · Latest: <code class="text-slate-500">${esc(remoteUpdateInfo.latest)}</code>`,
+    button: 'Update to Continue',
+  });
+}
+
 function finishRemotePreflight() {
   if (!remotePreflight?.pending || !remotePreflight.statusSeen || !remotePreflight.updateSeen) return;
   remotePreflight = null;
@@ -1092,12 +1101,7 @@ function finishRemotePreflight() {
     return;
   }
   if (remoteUpdateInfo?.available) {
-    showRemoteIntro({
-      title: 'Update Required',
-      text: `Version ${remoteUpdateInfo.latest} is available. Update CliDeck Remote to continue with mobile pairing on this machine.`,
-      foot: `Installed: <code class="text-slate-500">${esc(remoteUpdateInfo.installed)}</code> · Latest: <code class="text-slate-500">${esc(remoteUpdateInfo.latest)}</code>`,
-      button: 'Update to Continue',
-    });
+    showRemoteUpdateRequired();
     return;
   }
   if (remoteState === 'idle') {
@@ -1256,6 +1260,9 @@ function handleRemoteStatus(msg) {
     stopRemotePoll();
     if (wasPaired) { stopRemoteStats(); setRemoteLock(false); }
   }
+  if (remoteUpdateInfo?.available && remoteModalOpen) {
+    showRemoteUpdateRequired();
+  }
   updateRemoteButton();
   if (remotePreflight?.pending) {
     remotePreflight.statusSeen = true;
@@ -1270,9 +1277,18 @@ function handleRemotePaired(msg) {
   const qrImg = document.getElementById('remote-qr-img');
   if (msg.qr && msg.qr.startsWith('data:')) { qrImg.src = msg.qr; qrImg.classList.remove('hidden'); }
   else qrImg.classList.add('hidden');
-  setRemotePane('qr');
   updateRemoteButton();
   startRemotePoll();
+  if (remoteUpdateInfo?.available && remoteModalOpen) {
+    showRemoteUpdateRequired();
+    return;
+  }
+  if (remotePreflight?.pending) {
+    remotePreflight.statusSeen = true;
+    finishRemotePreflight();
+    return;
+  }
+  setRemotePane('qr');
 }
 
 function handleRemoteUnpaired() {
