@@ -79,6 +79,7 @@ function startGeminiMenuPoll(id) {
       geminiMenuPoll.delete(id);
       return;
     }
+    console.log(`[terminal.capture] session=${id.slice(0,8)} source=gemini-menu-poll`);
     sessions.broadcast({ type: 'terminal.capture', id });
   }, 500);
   geminiMenuPoll.set(id, timer);
@@ -112,17 +113,19 @@ const server = http.createServer((req, res) => {
       try {
         const payload = JSON.parse(body);
         const threadId = payload['thread-id'] || payload.session_id;
-        // console.log(`[codex] hook received thread=${threadId ? threadId.slice(0,8) : 'none'}`);
+        console.log(`[codex] hook received thread=${threadId ? threadId.slice(0,8) : 'none'}`);
         if (threadId) {
           const allSessions = sessions.getSessions();
+          let matched = false;
           for (const [id, s] of allSessions) {
             if (s.sessionToken === threadId) {
-              // console.log(`[codex] hook stop session=${id.slice(0,8)} thread=${threadId.slice(0,8)}`);
-              sessions.broadcast({ type: 'session.status', id, working: false, source: 'hook' });
+              matched = true;
+              console.log(`[codex] hook stop session=${id.slice(0,8)} thread=${threadId.slice(0,8)}`);
+              require('./telemetry-receiver').armCodexStop(id);
               break;
             }
           }
-          // if (!matched) console.log(`[codex] hook no session match for thread=${threadId.slice(0,8)}`);
+          if (!matched) console.log(`[codex] hook no session match for thread=${threadId.slice(0,8)}`);
         }
       } catch {}
       res.writeHead(200).end('{}');

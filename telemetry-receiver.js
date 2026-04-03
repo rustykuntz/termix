@@ -7,6 +7,7 @@ const activity = new Map(); // sessionId → has received events
 const lastEvent = new Map(); // sessionId → last OTEL event name (+ kind)
 const pendingSetup = new Map(); // sessionId → timer (waiting for first event)
 const codexMenuPoll = new Map(); // sessionId → interval (polling for menu after response.completed)
+const codexPendingStop = new Map(); // sessionId → ts (notify hook arrived; wait for next response.completed)
 const escPendingIdle = new Map(); // sessionId → timer (Esc interrupt → confirm idle after output silence)
 const escSuppressUntil = new Map(); // sessionId → ts (briefly ignore telemetry reassertions after Esc)
 let broadcastFn = null;
@@ -75,7 +76,7 @@ function handleLogs(req, res) {
 
         // Debug telemetry logs — uncomment as needed, do not delete
         // if (serviceName === 'claude-code' && eventName) console.log(`[telemetry:claude] ${eventName}`);
-        // if (serviceName === 'codex_cli_rs' && eventName) console.log(`[telemetry:codex] ${eventName} ${attrs['event.kind'] ? 'kind=' + attrs['event.kind'] : ''} ${attrs['tool'] ? 'tool=' + attrs['tool'] : ''} session=${resolvedId.slice(0,8)}`);
+        if (serviceName === 'codex_cli_rs' && eventName) console.log(`[telemetry:codex] ${eventName} ${attrs['event.kind'] ? 'kind=' + attrs['event.kind'] : ''} ${attrs['tool'] ? 'tool=' + attrs['tool'] : ''} session=${resolvedId.slice(0,8)}`);
         // if (serviceName === 'gemini-cli' && eventName) console.log(`[telemetry:gemini] ${eventName}`);
 
         // Track last event per session (used by menu detection validation)
@@ -83,15 +84,23 @@ function handleLogs(req, res) {
 
         // Status: Codex user_prompt → working. Claude and Gemini use hooks.
         if (eventName === 'codex.user_prompt') {
+          codexPendingStop.delete(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
         }
 
-        // Codex: response.completed → poll for menu until found or timeout
+        // Codex: after notify hook arms a pending stop, the next response.completed commits idle.
+        // Also poll briefly for a visible choice menu.
         if (eventName === 'codex.sse_event' && attrs['event.kind'] === 'response.completed') {
+          const pendingStopAt = codexPendingStop.get(resolvedId);
+          if (pendingStopAt && Date.now() - pendingStopAt <= 5000) {
+            codexPendingStop.delete(resolvedId);
+            broadcastFn?.({ type: 'session.status', id: resolvedId, working: false, source: 'telemetry-stop' });
+          }
           startCodexMenuPoll(resolvedId);
         }
         // Codex: tool_decision → user approved, cancel menu poll, back to working
         if (eventName === 'codex.tool_decision') {
+          codexPendingStop.delete(resolvedId);
           cancelCodexMenuPoll(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
         }
@@ -147,6 +156,7 @@ function startCodexMenuPoll(id) {
   const started = Date.now();
   const poll = setInterval(() => {
     if (Date.now() - started > 3000) { cancelCodexMenuPoll(id); return; }
+    console.log(`[terminal.capture] session=${id.slice(0,8)} source=codex-menu-poll`);
     broadcastFn?.({ type: 'terminal.capture', id });
   }, 500);
   codexMenuPoll.set(id, poll);
@@ -155,6 +165,10 @@ function startCodexMenuPoll(id) {
 function cancelCodexMenuPoll(id) {
   const timer = codexMenuPoll.get(id);
   if (timer) { clearInterval(timer); codexMenuPoll.delete(id); }
+}
+
+function armCodexStop(id) {
+  codexPendingStop.set(id, Date.now());
 }
 
 function startEscIdle(id) {
@@ -190,6 +204,7 @@ function clear(id) {
   activity.delete(id);
   lastEvent.delete(id);
   cancelCodexMenuPoll(id);
+  codexPendingStop.delete(id);
   cancelEscIdle(id);
   escSuppressUntil.delete(id);
   const pending = pendingSetup.get(id);
@@ -203,4 +218,4 @@ function hasEvents(id) {
   return activity.has(id);
 }
 
-module.exports = { init, handleLogs, clear, hasEvents, getLastEvent, cancelCodexMenuPoll, watchSession, startEscIdle };
+module.exports = { init, handleLogs, clear, hasEvents, getLastEvent, cancelCodexMenuPoll, watchSession, startEscIdle, armCodexStop };
