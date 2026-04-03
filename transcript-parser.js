@@ -4,10 +4,37 @@ function parseTurns(presetId, lines, users) {
 }
 
 function parseLastAgentOnly(presetId, lines) {
+  if (presetId === 'claude-code') return parseLastClaudeAgentOnly(lines);
   const turns = collapseAgentTurns((parsers[presetId] || (() => null))(lines, null));
   if (!turns?.length) return null;
   const last = [...turns].reverse().find(t => t.role === 'agent');
   return last || null;
+}
+
+function parseLastClaudeAgentOnly(lines) {
+  const userPromptRe = /^(?:[│ ]\s*)?[❯›]\s(.*)$/;
+  const agentRe = /^(?:[│ ]\s*)?[⏺•●]\s(.*)$/;
+  let promptIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (userPromptRe.test(lines[i])) { promptIdx = i; break; }
+  }
+  const upperBound = promptIdx >= 0 ? promptIdx : lines.length;
+  let start = -1;
+  for (let i = upperBound - 1; i >= 0; i--) {
+    if (agentRe.test(lines[i])) { start = i; break; }
+  }
+  if (start < 0) return null;
+  const first = lines[start].match(agentRe);
+  const turn = { role: 'agent', text: first[1] };
+  for (let i = start + 1; i < upperBound; i++) {
+    if (userPromptRe.test(lines[i]) || agentRe.test(lines[i])) break;
+    let cont = lines[i];
+    if (cont.startsWith('│ ')) cont = cont.slice(2);
+    else if (cont.startsWith('  ')) cont = cont.slice(2);
+    turn.text += '\n' + cont;
+  }
+  turn.text = turn.text.replace(/\n+$/, '');
+  return turn;
 }
 
 const parsers = {
