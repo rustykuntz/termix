@@ -101,19 +101,28 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
   if (preset?.telemetryEnv) telemetry.watchSession(id, bin);
   if (preset?.bridge === 'opencode') opencodeBridge.watchSession(id, cwd);
 
+  function injectRolePrompt() {
+    if (!session.pendingRolePrompt) return;
+    transcript.recordInjectedInput(id, session.pendingRolePrompt);
+    term.write(session.pendingRolePrompt);
+    setTimeout(() => term.write('\r'), 150);
+    console.log(`Session ${id.slice(0, 8)}: injected role prompt`);
+    delete session.pendingRolePrompt;
+    delete session._rolePromptTimer;
+  }
+
   term.onData((data) => {
-    // Inject role prompt once after agent starts producing output
+    // Role prompts should be injected only when the agent is likely ready for
+    // input. For Codex, use the first OTLP startup event instead of a blind
+    // fixed startup delay; other agents keep the existing delayed path.
     if (session.pendingRolePrompt && !session._rolePromptTimer) {
-      session._rolePromptTimer = setTimeout(() => {
-        if (session.pendingRolePrompt) {
-          transcript.recordInjectedInput(id, session.pendingRolePrompt);
-          term.write(session.pendingRolePrompt);
-          setTimeout(() => term.write('\r'), 150);
-          console.log(`Session ${id.slice(0, 8)}: injected role prompt`);
-          delete session.pendingRolePrompt;
-          delete session._rolePromptTimer;
-        }
-      }, 3000);
+      if (session.presetId === 'codex') {
+        if (telemetry.hasEvents(id)) injectRolePrompt();
+      } else {
+        session._rolePromptTimer = setTimeout(() => {
+          if (session.pendingRolePrompt) injectRolePrompt();
+        }, 3000);
+      }
     }
     session.chunks.push(data);
     session.chunksSize += data.length;
@@ -363,7 +372,7 @@ function restart(msg, ws, cfg) {
   }
 
   const savedToken = s.sessionToken;
-  const { name, cwd, commandId, projectId } = s;
+  const { name, cwd, commandId, projectId, roleName, muted, lastPreview, lastActivityAt } = s;
 
   activity.clear(id);
   telemetry.clear(id);
@@ -378,6 +387,14 @@ function restart(msg, ws, cfg) {
     console.error('[restart] spawn failed:', err.message);
     broadcast({ type: 'session.restarted', id, error: err.message });
     return;
+  }
+
+  const next = sessions.get(id);
+  if (next) {
+    next.roleName = roleName || null;
+    next.muted = !!muted;
+    next.lastPreview = lastPreview || '';
+    next.lastActivityAt = lastActivityAt || null;
   }
 
   broadcast({ type: 'session.restarted', id, resumed: !!canResume });

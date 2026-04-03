@@ -206,13 +206,14 @@ function buildApi(pluginId, pluginDir, state) {
     getSession(id) {
       const s = sessionsFn?.()?.get(id);
       if (!s) return null;
-      return { id, name: s.name, cwd: s.cwd, commandId: s.commandId, presetId: s.presetId || 'shell', themeId: s.themeId, projectId: s.projectId, roleName: s.roleName || null, working: !!sessionStatus.get(id) };
+      const state = sessionStatus.get(id) || '';
+      return { id, name: s.name, cwd: s.cwd, commandId: s.commandId, presetId: s.presetId || 'shell', themeId: s.themeId, projectId: s.projectId, roleName: s.roleName || null, working: state.startsWith('1:') };
     },
     getSessions() {
       const sessions = sessionsFn?.();
       if (!sessions) return [];
       return [...sessions].map(([id, s]) => ({
-        id, name: s.name, cwd: s.cwd, commandId: s.commandId, presetId: s.presetId || 'shell', themeId: s.themeId, projectId: s.projectId, roleName: s.roleName || null, working: !!sessionStatus.get(id),
+        id, name: s.name, cwd: s.cwd, commandId: s.commandId, presetId: s.presetId || 'shell', themeId: s.themeId, projectId: s.projectId, roleName: s.roleName || null, working: (sessionStatus.get(id) || '').startsWith('1:'),
       }));
     },
 

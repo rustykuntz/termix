@@ -77,13 +77,13 @@ function handleLogs(req, res) {
 
         // Debug telemetry logs — uncomment as needed, do not delete
         // if (serviceName === 'claude-code' && eventName) console.log(`[telemetry:claude] ${eventName}`);
-        // if (serviceName === 'codex_cli_rs' && eventName) {
-        //   const details = Object.entries(attrs)
-        //     .filter(([k]) => k !== 'event.name')
-        //     .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-        //     .join(' ');
-        //   console.log(`[telemetry:codex] ${eventName} session=${resolvedId.slice(0,8)}${details ? ' ' + details : ''}`);
-        // }
+        if (serviceName === 'codex_cli_rs' && eventName) {
+          const details = Object.entries(attrs)
+            .filter(([k]) => k !== 'event.name')
+            .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+            .join(' ');
+          console.log(`[telemetry:codex] ${eventName} session=${resolvedId.slice(0,8)}${details ? ' ' + details : ''}`);
+        }
         // if (serviceName === 'gemini-cli' && eventName) console.log(`[telemetry:gemini] ${eventName}`);
 
         // Track last event per session (used by menu detection validation)
