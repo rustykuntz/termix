@@ -1052,6 +1052,7 @@ let remoteConnectedAt = null;
 let remoteStatsTimer = null;
 let remoteUpdateInfo = null;
 let remotePreflight = null;
+let remoteLastStatus = null;
 
 function startRemotePoll() {
   stopRemotePoll();
@@ -1103,6 +1104,25 @@ function finishRemotePreflight() {
     remoteState = 'connecting';
     setRemotePane('connecting');
     send({ type: 'remote.pair' });
+    return;
+  }
+  if (remoteState === 'paired' && remoteLastStatus?.paired) {
+    setRemotePane('active');
+    setRemoteLock(true);
+    startRemoteStats(remoteLastStatus.pairedAt);
+    const deviceEl = document.getElementById('remote-device-info');
+    if (deviceEl) {
+      const parts = [remoteLastStatus.deviceName, remoteLastStatus.location].filter(Boolean);
+      deviceEl.textContent = parts.length ? parts.join(' · ') : '';
+    }
+    return;
+  }
+  if (remoteState === 'waiting' && remoteLastStatus?.connected && remoteLastStatus?.url) {
+    document.getElementById('remote-url-box').textContent = remoteLastStatus.url;
+    const qrImg = document.getElementById('remote-qr-img');
+    if (remoteLastStatus.qr && remoteLastStatus.qr.startsWith('data:')) { qrImg.src = remoteLastStatus.qr; qrImg.classList.remove('hidden'); }
+    else qrImg.classList.add('hidden');
+    setRemotePane('qr');
     return;
   }
   setRemotePane(remoteState === 'paired' ? 'active' : remoteState === 'waiting' ? 'qr' : 'connecting');
@@ -1196,10 +1216,12 @@ function updateRemoteButton() {
 }
 
 function handleRemoteStatus(msg) {
+  remoteLastStatus = msg;
   remoteInstalled = !!msg.installed;
   state.remoteVersion = msg.version || (msg.installed ? null : 'not installed');
   updateVersionFooter();
   const wasPaired = remoteState === 'paired';
+  const preflighting = !!remotePreflight?.pending;
   if (!msg.installed) {
     remoteState = 'idle';
     stopRemotePoll();
@@ -1208,7 +1230,7 @@ function handleRemoteStatus(msg) {
     const wasFresh = remoteState !== 'paired';
     remoteState = 'paired';
     if (!remoteStatusPoll) startRemotePoll();
-    if (wasFresh) {
+    if (wasFresh && !preflighting) {
 
       setRemotePane('active');
       setRemoteLock(true);
@@ -1228,7 +1250,7 @@ function handleRemoteStatus(msg) {
     if (msg.qr && msg.qr.startsWith('data:')) { qrImg.src = msg.qr; qrImg.classList.remove('hidden'); }
     else qrImg.classList.add('hidden');
     startRemotePoll();
-    if (remoteModalOpen) setRemotePane('qr');
+    if (!preflighting && remoteModalOpen) setRemotePane('qr');
   } else {
     remoteState = 'idle';
     stopRemotePoll();
