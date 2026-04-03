@@ -14,7 +14,7 @@ function cleanAgentText(presetId, text) {
     out = out.replace(/\n\s*.*\(running stop hook\)[\s\S]*$/, '').trim();
     out = out.replace(/\n\s*\?\s*for shortcuts[\s\S]*$/, '').trim();
     out = out.replace(/\n\s*esc to interrupt[\s\S]*$/, '').trim();
-    out = out.replace(/\n\s*[✻✢✣✤✥✦✧]\s+[^\n]*$/, '').trim();
+    out = out.replace(/\n\n\s*[✻✢✣✤✥✦✧][\s\S]*$/, '').trim();
   }
   return out;
 }
