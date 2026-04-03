@@ -79,7 +79,6 @@ function startGeminiMenuPoll(id) {
       geminiMenuPoll.delete(id);
       return;
     }
-    console.log(`[terminal.capture] session=${id.slice(0,8)} source=gemini-menu-poll`);
     sessions.broadcast({ type: 'terminal.capture', id });
   }, 500);
   geminiMenuPoll.set(id, timer);
@@ -112,21 +111,26 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       try {
         const payload = JSON.parse(body);
+        const clideckId = payload.clideck_id;
         const threadId = payload['thread-id'] || payload.session_id;
-        console.log(`[codex] hook received thread=${threadId ? threadId.slice(0,8) : 'none'}`);
-        if (threadId) {
-          const allSessions = sessions.getSessions();
-          let matched = false;
+        // console.log(`[codex] notify clideck=${clideckId ? clideckId.slice(0,8) : 'none'} thread=${threadId ? threadId.slice(0,8) : 'none'}`);
+        const allSessions = sessions.getSessions();
+        let matched = false;
+        if (clideckId && allSessions.has(clideckId)) {
+          matched = true;
+          // console.log(`[codex] notify matched by clideck_id session=${clideckId.slice(0,8)}`);
+          require('./telemetry-receiver').armCodexStop(clideckId);
+        } else if (threadId) {
           for (const [id, s] of allSessions) {
             if (s.sessionToken === threadId) {
               matched = true;
-              console.log(`[codex] hook stop session=${id.slice(0,8)} thread=${threadId.slice(0,8)}`);
+              // console.log(`[codex] notify matched by thread session=${id.slice(0,8)} thread=${threadId.slice(0,8)}`);
               require('./telemetry-receiver').armCodexStop(id);
               break;
             }
           }
-          if (!matched) console.log(`[codex] hook no session match for thread=${threadId.slice(0,8)}`);
         }
+        // if (!matched) console.log(`[codex] notify no match clideck=${clideckId ? clideckId.slice(0,8) : 'none'} thread=${threadId ? threadId.slice(0,8) : 'none'}`);
       } catch {}
       res.writeHead(200).end('{}');
     });
@@ -142,22 +146,22 @@ const server = http.createServer((req, res) => {
         const payload = JSON.parse(body);
         const route = req.url.slice('/hook/claude/'.length);
         const sessionId = payload.session_id;
-        // console.log(`[claude] hook ${route} session=${sessionId?.slice(0,8) || '?'}`);
-        if (sessionId) {
-          const allSessions = sessions.getSessions();
-          let clideckId = null;
-          for (const [id, s] of allSessions) {
-            if (s.sessionToken === sessionId) { clideckId = id; break; }
-          }
-          if (clideckId) {
-            if (route === 'start') {
-              sessions.broadcast({ type: 'session.status', id: clideckId, working: true, source: 'hook' });
-            } else if (route === 'stop' || route === 'idle') {
-              sessions.broadcast({ type: 'session.status', id: clideckId, working: false, source: 'hook' });
-            } else if (route === 'menu') {
-              // PreToolUse: trigger terminal capture — detectMenu will set idle if a choice menu is visible
-              setTimeout(() => sessions.broadcast({ type: 'terminal.capture', id: clideckId }), 500);
-            }
+        console.log(`[claude] hook ${route} session=${sessionId?.slice(0,8) || '?'}`);
+        const allSessions = sessions.getSessions();
+        const clideckId = payload.clideck_id && allSessions.has(payload.clideck_id)
+          ? payload.clideck_id
+          : sessionId
+            ? [...allSessions].find(([, s]) => s.sessionToken === sessionId)?.[0]
+            : null;
+        if (clideckId) {
+          if (route === 'start') {
+            sessions.broadcast({ type: 'session.status', id: clideckId, working: true, source: 'hook' });
+          } else if (route === 'stop' || route === 'idle') {
+            sessions.broadcast({ type: 'session.status', id: clideckId, working: false, source: 'hook' });
+          } else if (route === 'menu') {
+            // PreToolUse: trigger terminal capture — detectMenu will set idle if a choice menu is visible
+            console.log(`[terminal.capture] session=${clideckId.slice(0,8)} source=claude-menu`);
+            setTimeout(() => sessions.broadcast({ type: 'terminal.capture', id: clideckId }), 500);
           }
         }
       } catch {}

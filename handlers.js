@@ -116,10 +116,10 @@ function detectTelemetryConfig(c) {
       try {
         const s = JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8'));
         const hooks = s.hooks || {};
-        const has = (arr, path) => arr?.some(h => h.hooks?.some(x => x.url?.includes('/hook/claude/' + path)));
+        const has = (arr, path) => arr?.some(h => h.hooks?.some(x => x.command?.includes('claude-hook.js') && x.command?.includes(` ${path}`)));
         detected = has(hooks.UserPromptSubmit, 'start') && has(hooks.Stop, 'stop') && has(hooks.StopFailure, 'stop')
                 && has(hooks.PreToolUse, 'menu')
-                && hooks.Notification?.some(h => h.matcher === 'idle_prompt' && h.hooks?.some(x => x.url?.includes('/hook/claude/idle')));
+                && hooks.Notification?.some(h => h.matcher === 'idle_prompt' && h.hooks?.some(x => x.command?.includes('claude-hook.js') && x.command?.includes(' idle')));
         if (!detected) reason = 'Needs re-patch';
       } catch {}
     } else if (preset.presetId === 'codex') {
@@ -468,17 +468,23 @@ function applyTelemetryConfig(preset) {
         try { settings = JSON.parse(readFileSync(configPath, 'utf8')); } catch {}
       }
       const hooks = settings.hooks || {};
-      const endpoint = `http://localhost:${port}/hook/claude`;
-      const clideckHook = (url) => ({ hooks: [{ type: 'http', url }] });
-      const hasClideck = (arr, path) => arr?.some(h => h.hooks?.some(x => x.url?.includes('/hook/claude/' + path)));
-      if (hasClideck(hooks.UserPromptSubmit, 'start') && hasClideck(hooks.Stop, 'stop') && hasClideck(hooks.StopFailure, 'stop') && hasClideck(hooks.PreToolUse, 'menu') && hooks.Notification?.some(h => h.matcher === 'idle_prompt' && h.hooks?.some(x => x.url?.includes('/hook/claude/idle')))) {
+      const hookCmd = (route) => `"${process.execPath.replace(/\\/g, '/')}" "${join(__dirname, 'bin', 'claude-hook.js').replace(/\\/g, '/')}" ${port} ${route}`;
+      const clideckHook = (route) => ({ hooks: [{ type: 'command', command: hookCmd(route) }] });
+      const hasClideck = (arr, path) => arr?.some(h => h.hooks?.some(x => x.command === hookCmd(path)));
+      if (hasClideck(hooks.UserPromptSubmit, 'start') && hasClideck(hooks.Stop, 'stop') && hasClideck(hooks.StopFailure, 'stop') && hasClideck(hooks.PreToolUse, 'menu') && hooks.Notification?.some(h => h.matcher === 'idle_prompt' && h.hooks?.some(x => x.command === hookCmd('idle')))) {
         return { success: true, message: 'Already configured' };
       }
-      if (!hasClideck(hooks.UserPromptSubmit, 'start')) hooks.UserPromptSubmit = [...(hooks.UserPromptSubmit || []), clideckHook(`${endpoint}/start`)];
-      if (!hasClideck(hooks.Stop, 'stop')) hooks.Stop = [...(hooks.Stop || []), clideckHook(`${endpoint}/stop`)];
-      if (!hasClideck(hooks.StopFailure, 'stop')) hooks.StopFailure = [...(hooks.StopFailure || []), clideckHook(`${endpoint}/stop`)];
-      if (!hasClideck(hooks.Notification, 'idle')) hooks.Notification = [...(hooks.Notification || []), { matcher: 'idle_prompt', ...clideckHook(`${endpoint}/idle`) }];
-      if (!hasClideck(hooks.PreToolUse, 'menu')) hooks.PreToolUse = [...(hooks.PreToolUse || []), clideckHook(`${endpoint}/menu`)];
+      const stripOld = (arr) => (arr || []).filter(h => !h.hooks?.some(x => x.url?.includes('/hook/claude/') || x.command?.includes('claude-hook.js')));
+      hooks.UserPromptSubmit = stripOld(hooks.UserPromptSubmit);
+      hooks.Stop = stripOld(hooks.Stop);
+      hooks.StopFailure = stripOld(hooks.StopFailure);
+      hooks.PreToolUse = stripOld(hooks.PreToolUse);
+      hooks.Notification = stripOld(hooks.Notification);
+      if (!hasClideck(hooks.UserPromptSubmit, 'start')) hooks.UserPromptSubmit = [...(hooks.UserPromptSubmit || []), clideckHook('start')];
+      if (!hasClideck(hooks.Stop, 'stop')) hooks.Stop = [...(hooks.Stop || []), clideckHook('stop')];
+      if (!hasClideck(hooks.StopFailure, 'stop')) hooks.StopFailure = [...(hooks.StopFailure || []), clideckHook('stop')];
+      if (!hasClideck(hooks.Notification, 'idle')) hooks.Notification = [...(hooks.Notification || []), { matcher: 'idle_prompt', ...clideckHook('idle') }];
+      if (!hasClideck(hooks.PreToolUse, 'menu')) hooks.PreToolUse = [...(hooks.PreToolUse || []), clideckHook('menu')];
       settings.hooks = hooks;
       mkdirSync(dirname(configPath), { recursive: true });
       writeFileSync(configPath, JSON.stringify(settings, null, 2) + '\n');
@@ -563,7 +569,7 @@ function removeTelemetryConfig(preset) {
       for (const event of ['UserPromptSubmit', 'Stop', 'StopFailure', 'Notification', 'PreToolUse']) {
         const arr = settings.hooks[event];
         if (!arr) continue;
-        settings.hooks[event] = arr.filter(h => !h.hooks?.some(x => x.url?.includes('/hook/claude/')));
+        settings.hooks[event] = arr.filter(h => !h.hooks?.some(x => x.url?.includes('/hook/claude/') || x.command?.includes('claude-hook.js')));
         if (!settings.hooks[event].length) delete settings.hooks[event];
       }
       if (!Object.keys(settings.hooks).length) delete settings.hooks;

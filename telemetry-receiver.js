@@ -8,8 +8,8 @@ const lastEvent = new Map(); // sessionId → last OTEL event name (+ kind)
 const pendingSetup = new Map(); // sessionId → timer (waiting for first event)
 const codexMenuPoll = new Map(); // sessionId → interval (polling for menu after response.completed)
 const codexPendingStop = new Map(); // sessionId → ts (notify hook arrived; wait for next response.completed)
-const escPendingIdle = new Map(); // sessionId → timer (Esc interrupt → confirm idle after output silence)
-const escSuppressUntil = new Map(); // sessionId → ts (briefly ignore telemetry reassertions after Esc)
+const codexOutputDone = new Map(); // sessionId → ts (fallback if notify never fires)
+const escPendingIdle = new Map(); // sessionId → timer (Esc interrupt → short grace before forcing idle)
 let broadcastFn = null;
 let sessionsFn = null;
 
@@ -76,7 +76,13 @@ function handleLogs(req, res) {
 
         // Debug telemetry logs — uncomment as needed, do not delete
         // if (serviceName === 'claude-code' && eventName) console.log(`[telemetry:claude] ${eventName}`);
-        if (serviceName === 'codex_cli_rs' && eventName) console.log(`[telemetry:codex] ${eventName} ${attrs['event.kind'] ? 'kind=' + attrs['event.kind'] : ''} ${attrs['tool'] ? 'tool=' + attrs['tool'] : ''} session=${resolvedId.slice(0,8)}`);
+        // if (serviceName === 'codex_cli_rs' && eventName) {
+        //   const details = Object.entries(attrs)
+        //     .filter(([k]) => k !== 'event.name')
+        //     .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+        //     .join(' ');
+        //   console.log(`[telemetry:codex] ${eventName} session=${resolvedId.slice(0,8)}${details ? ' ' + details : ''}`);
+        // }
         // if (serviceName === 'gemini-cli' && eventName) console.log(`[telemetry:gemini] ${eventName}`);
 
         // Track last event per session (used by menu detection validation)
@@ -85,7 +91,14 @@ function handleLogs(req, res) {
         // Status: Codex user_prompt → working. Claude and Gemini use hooks.
         if (eventName === 'codex.user_prompt') {
           codexPendingStop.delete(resolvedId);
+          codexOutputDone.delete(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
+        }
+
+        // Fallback: when notify does not fire, require an output item to finish
+        // before treating the next response.completed as a real end-of-turn.
+        if (eventName === 'codex.websocket_event' && attrs['event.kind'] === 'response.output_item.done') {
+          codexOutputDone.set(resolvedId, Date.now());
         }
 
         // Codex: after notify hook arms a pending stop, the next response.completed commits idle.
@@ -93,19 +106,32 @@ function handleLogs(req, res) {
         if (eventName === 'codex.sse_event' && attrs['event.kind'] === 'response.completed') {
           const pendingStopAt = codexPendingStop.get(resolvedId);
           if (pendingStopAt && Date.now() - pendingStopAt <= 5000) {
+            // console.log(`[codex] complete matched pending-stop session=${resolvedId.slice(0,8)} age=${Date.now() - pendingStopAt}ms`);
             codexPendingStop.delete(resolvedId);
+            codexOutputDone.delete(resolvedId);
             broadcastFn?.({ type: 'session.status', id: resolvedId, working: false, source: 'telemetry-stop' });
+          } else {
+            const outputDoneAt = codexOutputDone.get(resolvedId);
+            if (outputDoneAt && Date.now() - outputDoneAt <= 5000) {
+              // console.log(`[codex] complete matched output-item.done fallback session=${resolvedId.slice(0,8)} age=${Date.now() - outputDoneAt}ms`);
+              codexOutputDone.delete(resolvedId);
+              broadcastFn?.({ type: 'session.status', id: resolvedId, working: false, source: 'telemetry-fallback' });
+            } else {
+              // console.log(`[codex] response.completed with no notify-stop and no output-item.done fallback session=${resolvedId.slice(0,8)} outputDone=${outputDoneAt ? Date.now() - outputDoneAt + 'ms' : 'none'}`);
+            }
           }
           startCodexMenuPoll(resolvedId);
         }
         // Codex: tool_decision → user approved, cancel menu poll, back to working
         if (eventName === 'codex.tool_decision') {
           codexPendingStop.delete(resolvedId);
+          codexOutputDone.delete(resolvedId);
           cancelCodexMenuPoll(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
         }
         // Codex: user_prompt or next sse_event cancels menu poll
         if ((eventName === 'codex.user_prompt' || (eventName === 'codex.sse_event' && attrs['event.kind'] !== 'response.completed'))) {
+          codexOutputDone.delete(resolvedId);
           cancelCodexMenuPoll(resolvedId);
         }
 
@@ -156,7 +182,7 @@ function startCodexMenuPoll(id) {
   const started = Date.now();
   const poll = setInterval(() => {
     if (Date.now() - started > 3000) { cancelCodexMenuPoll(id); return; }
-    console.log(`[terminal.capture] session=${id.slice(0,8)} source=codex-menu-poll`);
+    // console.log(`[terminal.capture] session=${id.slice(0,8)} source=codex-menu-poll`);
     broadcastFn?.({ type: 'terminal.capture', id });
   }, 500);
   codexMenuPoll.set(id, poll);
@@ -169,35 +195,22 @@ function cancelCodexMenuPoll(id) {
 
 function armCodexStop(id) {
   codexPendingStop.set(id, Date.now());
+  codexOutputDone.delete(id);
+  // console.log(`[codex] pending-stop armed session=${id.slice(0,8)}`);
 }
 
 function startEscIdle(id) {
   cancelEscIdle(id);
-  const started = Date.now();
-  const ignoreUntil = started + 500;
-  // console.log(`[escIdle] start session=${id.slice(0,8)}`);
-  const check = setInterval(() => {
-    const lastOut = ioActivity.lastOutputAt(id);
-    const silence = Date.now() - Math.max(ignoreUntil, lastOut);
-    const elapsed = Date.now() - started;
-    if (elapsed > 10000) {
-      // console.log(`[escIdle] timeout session=${id.slice(0,8)} silence=${silence}ms`);
-      cancelEscIdle(id);
-      return;
-    }
-    if (silence >= 2000) {
-      // console.log(`[escIdle] idle session=${id.slice(0,8)} silence=${silence}ms`);
-      escSuppressUntil.set(id, Date.now() + 2000);
-      cancelEscIdle(id);
-      broadcastFn?.({ type: 'session.status', id, working: false, source: 'esc' });
-    }
-  }, 250);
-  escPendingIdle.set(id, check);
+  const timer = setTimeout(() => {
+    escPendingIdle.delete(id);
+    broadcastFn?.({ type: 'session.status', id, working: false, source: 'esc' });
+  }, 350);
+  escPendingIdle.set(id, timer);
 }
 
 function cancelEscIdle(id) {
   const timer = escPendingIdle.get(id);
-  if (timer) { clearInterval(timer); escPendingIdle.delete(id); }
+  if (timer) { clearTimeout(timer); escPendingIdle.delete(id); }
 }
 
 function clear(id) {
@@ -205,8 +218,8 @@ function clear(id) {
   lastEvent.delete(id);
   cancelCodexMenuPoll(id);
   codexPendingStop.delete(id);
+  codexOutputDone.delete(id);
   cancelEscIdle(id);
-  escSuppressUntil.delete(id);
   const pending = pendingSetup.get(id);
   if (pending) { clearTimeout(pending.timer); pendingSetup.delete(id); }
 }

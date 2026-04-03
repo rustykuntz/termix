@@ -33,7 +33,11 @@ function broadcast(msg) {
     const s = sessions.get(msg.id);
     if (s) {
       s.working = !!msg.working;
-      s._finalizeOnIdle = !msg.working && msg.source !== 'menu';
+      // Codex approval flows can pause on a menu and then continue into a normal
+      // reply; keep idle finalization enabled there so the completed post-menu
+      // answer is not lost. Other agents still suppress transcript finalization on menu.
+      s._finalizeOnIdle = !msg.working && msg.source !== 'esc' && (msg.source !== 'menu' || s.presetId === 'codex');
+      // if (s.presetId === 'codex') console.log(`[codex] status session=${msg.id.slice(0,8)} working=${!!msg.working} source=${msg.source}`);
     }
     plugins.notifyStatus(msg.id, msg.working, msg.source);
   }

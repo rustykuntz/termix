@@ -5,8 +5,15 @@
 // Port is passed as the first argument by the notify config.
 
 const port = parseInt(process.argv[2], 10);
-const payload = process.argv[process.argv.length - 1];
-if (!port || !payload || payload === String(port)) process.exit(0);
+const raw = process.argv[process.argv.length - 1];
+const clideckId = process.env.CLIDECK_SESSION_ID || '';
+if (!port || !raw || raw === String(port)) process.exit(0);
+
+let payload = raw;
+try {
+  const parsed = JSON.parse(raw);
+  payload = JSON.stringify({ ...parsed, clideck_id: clideckId || undefined });
+} catch {}
 
 const http = require('http');
 const req = http.request({
