@@ -7,16 +7,7 @@
 <p align="center">
   one screen for AI coding agents.
   <br><br>
-  <a href="https://clideck.dev">Website</a> · <a href="https://docs.clideck.dev">Docs</a> · <a href="https://youtu.be/hICrtjGAeDk">Demo</a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/rustykuntz/clideck/stargazers">
-    <img src="https://img.shields.io/github/stars/rustykuntz/clideck?style=social" alt="stars">
-  </a>
-  <a href="https://www.npmjs.com/package/clideck">
-    <img src="https://img.shields.io/npm/v/clideck" alt="npm version">
-  </a>
+  <a href="https://clideck.dev">Website</a> · <a href="https://docs.clideck.dev">Docs</a> · <a href="https://youtu.be/hICrtjGAeDk">Demo</a> · <a href="https://www.npmjs.com/package/clideck"><img src="https://img.shields.io/npm/v/clideck" alt="npm version"></a>
 </p>
 
 <!-- TODO: Replace with a ~10 second GIF showing: open clideck,
