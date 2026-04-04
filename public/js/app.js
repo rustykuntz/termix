@@ -64,11 +64,11 @@ function connect() {
         renderResumable();
         break;
       case 'sessions':
-        msg.list.forEach(s => addTerminal(s.id, s.name, s.themeId, s.commandId, s.projectId, s.muted, s.lastPreview));
+        msg.list.forEach(s => addTerminal(s.id, s.name, s.themeId, s.commandId, s.projectId, s.muted, s.lastPreview, s.presetId));
         if (msg.list.length) select(msg.list[0].id);
         break;
       case 'created':
-        if (!state.terms.has(msg.id)) addTerminal(msg.id, msg.name, msg.themeId, msg.commandId, msg.projectId, msg.muted, msg.lastPreview);
+        if (!state.terms.has(msg.id)) addTerminal(msg.id, msg.name, msg.themeId, msg.commandId, msg.projectId, msg.muted, msg.lastPreview, msg.presetId);
         select(msg.id);
         applyFilter();
         closeMobileSidebar();

@@ -86,8 +86,22 @@ export function unregisterAllForPlugin(pluginId) {
 // Attach to an xterm terminal instance — xterm's hidden textarea is an input,
 // so we bypass the isInput check and dispatch directly.
 // Prompt autocomplete (// trigger) runs first, then hotkey dispatch.
-export function attachToTerminal(term) {
+export function attachToTerminal(term, presetId) {
   term.attachCustomKeyEventHandler((e) => {
+    // Claude Code uses Shift+Enter for multiline input, but xterm emits the
+    // same "\r" as plain Enter. Scope CSI-u translation to Claude only so
+    // other terminals keep their existing Enter behavior unchanged.
+    if (presetId === 'claude-code'
+      && e.type === 'keydown'
+      && e.key === 'Enter'
+      && e.shiftKey
+      && !e.ctrlKey
+      && !e.altKey
+      && !e.metaKey) {
+      e.preventDefault();
+      term.input('\x1b[13;2u');
+      return false;
+    }
     const promptResult = handleTerminalKey(e);
     if (promptResult === false) return false;
     if (e.type !== 'keydown') return true;
