@@ -1209,6 +1209,7 @@ export function setPillLogs(id, logs) {
 function appendLogLine(entry) {
   const body = document.querySelector('#pill-log-panel .pill-log-body');
   if (!body) return;
+  body.querySelectorAll('.pill-log-live').forEach(el => el.classList.remove('pill-log-live'));
   const line = document.createElement('div');
   const time = new Date(entry.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const t = entry.text;
@@ -1232,7 +1233,7 @@ function appendLogLine(entry) {
     icon = '<span class="text-slate-600">&#8230;</span>';
   } else if (/→ working$/.test(t)) {
     color = 'text-blue-400';
-    icon = '<span class="text-blue-500">&#9679;</span>';
+    icon = '<span class="pill-log-icon text-blue-500">&#9679;</span>';
   } else if (/→ idle$/.test(t)) {
     color = 'text-slate-500';
     icon = '<span class="text-slate-600">&#9675;</span>';
@@ -1248,10 +1249,24 @@ function appendLogLine(entry) {
   }
 
   line.className = 'flex gap-3 py-1 items-start';
+  if (/→ working$/.test(t)) line.classList.add('pill-log-live');
   line.innerHTML = `<span class="text-slate-600 flex-shrink-0 tabular-nums">${time}</span><span class="w-4 flex-shrink-0 text-center">${icon}</span><span class="${color} leading-relaxed">${content}</span>`;
   body.appendChild(line);
   body.scrollTop = body.scrollHeight;
 }
+
+const pillLogStyle = document.createElement('style');
+pillLogStyle.textContent = `
+  @keyframes pill-log-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.9); }
+  }
+  .pill-log-live .pill-log-icon {
+    display: inline-block;
+    animation: pill-log-pulse 1s ease-in-out infinite;
+  }
+`;
+document.head.appendChild(pillLogStyle);
 
 export function closePillLog() {
   state.activePill = null;

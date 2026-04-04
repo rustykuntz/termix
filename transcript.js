@@ -1,8 +1,9 @@
 const { appendFile, writeFileSync, mkdirSync, existsSync, readdirSync, readFileSync, unlinkSync } = require('fs');
 const { join, basename } = require('path');
 const { DATA_DIR } = require('./paths');
-const builder = require('./transcript-builder');
+const builder = require('./transcript-normalizer');
 const parser = require('./transcript-parser');
+const candidate = require('./transcript-candidate');
 
 const DIR = join(DATA_DIR, 'transcripts');
 const ANSI_RE = /\x1b[\[\]()#;?]*[0-9;]*[a-zA-Z@`~]|\x1b\].*?(?:\x07|\x1b\\)|\x1b.|\r|\x07/g;
@@ -111,6 +112,7 @@ function trackInput(id, data) {
       const line = buf.text.trim();
       if (line) {
         delete lastAgentText[id];
+        candidate.clear(id);
         store(id, 'user', line);
         if (!userTexts[id]) userTexts[id] = [];
         userTexts[id].push(line);
@@ -128,6 +130,7 @@ function trackInput(id, data) {
 
 function recordInjectedInput(id, text) {
   delete lastAgentText[id];
+  candidate.clear(id);
   for (const raw of String(text).split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
@@ -163,34 +166,21 @@ function parseTurnsFromLines(id, agent, lines, opts) {
   return turns?.length >= 2 ? turns : null;
 }
 
-function captureAgentTurn(id, agent, lines) {
+function updateAgentCandidate(id, presetId, lines) {
+  candidate.update(id, presetId, lines, getUsers(id));
+}
+
+function commitAgentCandidate(id, presetId) {
   if (!finalizePreset[id]) return;
-  const turns = parseTurnsFromLines(id, agent, lines);
-  // Finalized capture should not depend on the viewport still containing the
-  // matching user prompt line; if the full turn structure is gone, fall back to
-  // the last visible agent block alone.
-  const last = turns?.length ? turns[turns.length - 1] : parser.parseLastAgentOnly(agent, lines);
-  if (last) tlog(id, `capture lastRole=${last.role} raw=${JSON.stringify(String(last.text).slice(0, 200))}`);
-  if (last) clog(id, `capture lastRole=${last.role} raw=${JSON.stringify(String(last.text).slice(0, 200))}`);
-  const text = last?.role === 'agent' ? builder.cleanAgentText(finalizePreset[id], last.text) : '';
-  tlog(id, `capture cleaned=${JSON.stringify(String(text).slice(0, 200))}`);
-  if (!text) { tlog(id, 'capture skip empty-clean'); clog(id, 'capture skip empty-clean'); return; }
-  if (text === lastAgentText[id]) { tlog(id, 'capture skip duplicate-clean'); clog(id, 'capture skip duplicate-clean'); return; }
+  const text = candidate.get(id);
+  if (!text) { tlog(id, 'candidate commit skip empty'); clog(id, 'candidate commit skip empty'); return; }
+  if (text === lastAgentText[id]) { tlog(id, 'candidate commit skip duplicate'); clog(id, 'candidate commit skip duplicate'); return; }
   lastAgentText[id] = text;
   store(id, 'agent', text);
 }
 
-function captureFinalAgentText(id, presetId, text) {
-  if (!finalizePreset[id]) return;
-  const clean = builder.cleanAgentText(presetId || finalizePreset[id], text);
-  tlog(id, `captureFinal raw=${JSON.stringify(String(text).slice(0, 200))}`);
-  tlog(id, `captureFinal cleaned=${JSON.stringify(String(clean).slice(0, 200))}`);
-  clog(id, `captureFinal raw=${JSON.stringify(String(text).slice(0, 200))}`);
-  clog(id, `captureFinal cleaned=${JSON.stringify(String(clean).slice(0, 200))}`);
-  if (!clean) { tlog(id, 'captureFinal skip empty-clean'); clog(id, 'captureFinal skip empty-clean'); return; }
-  if (clean === lastAgentText[id]) { tlog(id, 'captureFinal skip duplicate-clean'); clog(id, 'captureFinal skip duplicate-clean'); return; }
-  lastAgentText[id] = clean;
-  store(id, 'agent', clean);
+function clearAgentCandidate(id) {
+  candidate.clear(id);
 }
 
 function getUsers(id) {
@@ -246,6 +236,7 @@ function clear(id) {
   delete userTexts[id];
   delete lastAgentText[id];
   delete finalizePreset[id];
+  candidate.clear(id);
 }
 
 // Detect interactive menus from raw screen lines. Returns [{value, label, selected}] or null.
@@ -274,4 +265,4 @@ function detectMenu(lines, presetId) {
   return choices.length ? choices : null;
 }
 
-module.exports = { init, trackInput, recordInjectedInput, trackOutput, captureAgentTurn, captureFinalAgentText, parseTurnsFromLines, getLastTurns, getCache, getReplayText, clear, setPrefix, setFinalizeOnIdle, detectMenu };
+module.exports = { init, trackInput, recordInjectedInput, trackOutput, updateAgentCandidate, commitAgentCandidate, clearAgentCandidate, parseTurnsFromLines, getLastTurns, getCache, getReplayText, clear, setPrefix, setFinalizeOnIdle, detectMenu };

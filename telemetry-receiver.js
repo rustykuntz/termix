@@ -10,7 +10,6 @@ const codexMenuPoll = new Map(); // sessionId → interval (polling for menu aft
 const codexPendingStop = new Map(); // sessionId → ts (notify hook arrived; wait for next response.completed)
 const codexOutputDone = new Map(); // sessionId → ts (fallback if notify never fires)
 const codexPendingIdle = new Map(); // sessionId → timer (tiny settle before committing idle)
-const escPendingIdle = new Map(); // sessionId → timer (Esc interrupt → short grace before forcing idle)
 let broadcastFn = null;
 let sessionsFn = null;
 
@@ -222,20 +221,6 @@ function cancelCodexPendingIdle(id) {
   if (timer) { clearTimeout(timer); codexPendingIdle.delete(id); }
 }
 
-function startEscIdle(id) {
-  cancelEscIdle(id);
-  const timer = setTimeout(() => {
-    escPendingIdle.delete(id);
-    broadcastFn?.({ type: 'session.status', id, working: false, source: 'esc' });
-  }, 350);
-  escPendingIdle.set(id, timer);
-}
-
-function cancelEscIdle(id) {
-  const timer = escPendingIdle.get(id);
-  if (timer) { clearTimeout(timer); escPendingIdle.delete(id); }
-}
-
 function clear(id) {
   activity.delete(id);
   lastEvent.delete(id);
@@ -243,7 +228,6 @@ function clear(id) {
   cancelCodexPendingIdle(id);
   codexPendingStop.delete(id);
   codexOutputDone.delete(id);
-  cancelEscIdle(id);
   const pending = pendingSetup.get(id);
   if (pending) { clearTimeout(pending.timer); pendingSetup.delete(id); }
 }
@@ -255,4 +239,4 @@ function hasEvents(id) {
   return activity.has(id);
 }
 
-module.exports = { init, handleLogs, clear, hasEvents, getLastEvent, cancelCodexMenuPoll, watchSession, startEscIdle, armCodexStop };
+module.exports = { init, handleLogs, clear, hasEvents, getLastEvent, cancelCodexMenuPoll, watchSession, armCodexStop };

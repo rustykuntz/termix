@@ -582,7 +582,8 @@ function executeAction(pid, proj, action, args, pillId) {
       proj.lastAction = { outputId: oid, from: args.from, to: args.to, at: now };
       proj.waitingOn = args.to;
       proj.staleSince = null;
-      api.sendToFrontend('routed', { projectId: pid, from: args.from, to: args.to });
+      const projName = api.getProjects().find(x => x.id === pid)?.name || 'Project';
+      api.sendToFrontend('routed', { projectId: pid, projectName: projName, from: args.from, to: args.to });
       if (pillId) {
         api.updateSessionPill(pillId, { working: false, statusText: `${args.from} → ${args.to}` });
         api.appendPillLog(pillId, `Routed ${args.from} → ${args.to}`);

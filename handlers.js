@@ -238,12 +238,13 @@ function onConnection(ws) {
         const transcript = require('./transcript');
         const sess = sessions.getSessions().get(msg.id);
         if (sess) {
+          transcript.updateAgentCandidate(msg.id, sess.presetId, msg.lines);
           if (!sess.working && sess._finalizeOnIdle) {
             sess._finalizeOnIdle = false;
             // if (sess.presetId === 'claude-code') {
             //   console.log(`[claude] terminal.buffer finalize session=${msg.id.slice(0,8)} lines=${msg.lines?.length || 0}`);
             // }
-            transcript.captureAgentTurn(msg.id, sess.presetId, msg.lines);
+            transcript.commitAgentCandidate(msg.id, sess.presetId);
           }
           let choices = require('./transcript').detectMenu(msg.lines, sess.presetId);
           // Codex: only trust menu detection if last OTEL event was response.completed

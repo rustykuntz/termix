@@ -2,6 +2,7 @@
 
 let api = null;
 const activeProjects = new Set();
+const START_ICON = '<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M6 4.5v11l9-5.5-9-5.5Z"/></svg>';
 
 export function init(pluginApi) {
   api = pluginApi;
@@ -12,7 +13,8 @@ export function init(pluginApi) {
     api.toast('Keep this browser tab active and prevent sleep while Autopilot runs.', {
       title: 'Autopilot started',
       type: 'warn',
-      duration: 5000,
+      duration: 6000,
+      iconHtml: START_ICON,
     });
   });
 
@@ -23,7 +25,10 @@ export function init(pluginApi) {
   });
 
   api.onMessage('error', (msg) => api.toast(msg.msg || 'Autopilot error', { type: 'error' }));
-  api.onMessage('routed', (msg) => api.toast(`→ ${msg.to}`, { type: 'info' }));
+  api.onMessage('routed', (msg) => api.toast(`${msg.from} \u2192 ${msg.to}`, {
+    type: 'info',
+    title: `Autopilot ${msg.projectName || 'Project'}:`,
+  }));
   api.onMessage('notify', (msg) => api.toast(msg.reason, { type: 'warn', duration: 0, markdown: true, title: `Autopilot \u2014 ${msg.projectName || 'Project'}` }));
   api.onMessage('paused', (msg) => api.toast(`Autopilot: ${msg.question}`, { type: 'warn' }));
   api.onMessage('resumed', () => api.toast('Autopilot resumed'));

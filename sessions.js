@@ -310,8 +310,14 @@ function input(msg) {
   if (!s) return;
   // Menu choice selected → back to working (Enter or digit keys only)
   if (s._menuKey && !s.working && (data === '\r' || /^[1-9]$/.test(data))) {
+    // Approval/denial menus can leave a transient tool line as the latest
+    // parsed candidate; clear it before the next real reply starts.
+    transcript.clearAgentCandidate(msg.id);
     s.pty.write(data);
-    s._resolvedMenuKey = s._menuKey;
+    // Autopilot may need to retry the same approval menu if the first Enter
+    // does not actually take, so only suppress same-menu re-detection for
+    // manual flows.
+    if (!plugins.shouldAutoApproveMenu(msg.id)) s._resolvedMenuKey = s._menuKey;
     if (s._menuActiveVersion) s._menuConsumedVersion = s._menuActiveVersion;
     s._menuKey = '';
     broadcast({ type: 'session.menu', id: msg.id, choices: [] });
@@ -320,7 +326,8 @@ function input(msg) {
   }
   writeSessionInput(msg.id, data);
   if (data === '\x1b' && s.working) {
-    telemetry.startEscIdle(msg.id);
+    transcript.clearAgentCandidate(msg.id);
+    broadcast({ type: 'session.status', id: msg.id, working: false, source: 'esc' });
   }
 }
 function resize(msg) { sessions.get(msg.id)?.pty.resize(msg.cols, msg.rows); }

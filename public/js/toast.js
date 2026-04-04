@@ -23,11 +23,11 @@ function getContainer() {
 
 /**
  * @param {string} message  — plain text, markdown (if markdown option), or raw HTML (if html option)
- * @param {{ type?: string, duration?: number, id?: string, html?: boolean, markdown?: boolean, title?: string }} opts
+ * @param {{ type?: string, duration?: number, id?: string, html?: boolean, markdown?: boolean, title?: string, iconHtml?: string }} opts
  * @returns {{ dismiss(): void }}
  */
 export function showToast(message, opts = {}) {
-  const { type = 'info', duration = 3000, id, html = false, markdown = false, title } = opts;
+  const { type = 'info', duration = 3000, id, html = false, markdown = false, title, iconHtml = '' } = opts;
   const sticky = duration === 0;
 
   if (id) document.getElementById(`tmx-toast-${id}`)?.remove();
@@ -39,6 +39,9 @@ export function showToast(message, opts = {}) {
 
   const body = markdown ? miniMarkdown(message) : html ? message : esc(message);
   const titleHtml = title ? `<div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">${esc(title)}</div>` : '';
+  const iconBlock = iconHtml
+    ? `<span class="w-5 h-5 flex-shrink-0 ${ICON_COLORS[type] || ICON_COLORS.info} mt-0.5">${iconHtml}</span>`
+    : `<svg class="w-5 h-5 flex-shrink-0 ${ICON_COLORS[type] || ICON_COLORS.info} mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">${ICONS[type] || ICONS.info}</svg>`;
   const closeX = `<button class="toast-close flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-colors">
       <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
     </button>`;
@@ -46,7 +49,7 @@ export function showToast(message, opts = {}) {
 
   el.innerHTML = `
     <div class="flex items-start gap-2.5 px-4 py-3.5">
-      <svg class="w-5 h-5 flex-shrink-0 ${ICON_COLORS[type] || ICON_COLORS.info} mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">${ICONS[type] || ICONS.info}</svg>
+      ${iconBlock}
       <div class="flex-1 min-w-0 text-xs text-slate-300 leading-relaxed">${titleHtml}${body}</div>
       ${sticky ? '' : closeX}
     </div>${sticky ? dismissBtn : ''}`;
@@ -63,4 +66,3 @@ export function showToast(message, opts = {}) {
   if (duration > 0) setTimeout(dismiss, duration);
   return { dismiss };
 }
-
