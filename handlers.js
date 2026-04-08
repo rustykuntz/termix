@@ -1,6 +1,6 @@
 const { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, unlinkSync } = require('fs');
 const { join, dirname } = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, execFile } = require('child_process');
 const os = require('os');
 const config = require('./config');
 const sessions = require('./sessions');
@@ -394,6 +394,28 @@ function onConnection(ws) {
         config.save(cfg);
         plugins.notifyConfig(cfg);
         sessions.broadcast({ type: 'config', config: configForClient() });
+        break;
+      }
+
+      case 'project.openPath': {
+        const proj = cfg.projects?.find(p => p.id === msg.id);
+        if (!proj?.path) {
+          ws.send(JSON.stringify({ type: 'project.openPath.result', id: msg.id, success: false, error: 'Project path is not set' }));
+          break;
+        }
+        const cmd = process.platform === 'darwin'
+          ? 'open'
+          : process.platform === 'win32'
+            ? 'explorer'
+            : 'xdg-open';
+        execFile(cmd, [proj.path], { shell: process.platform === 'win32' }, (err) => {
+          ws.send(JSON.stringify({
+            type: 'project.openPath.result',
+            id: msg.id,
+            success: !err,
+            error: err ? err.message : '',
+          }));
+        });
         break;
       }
 

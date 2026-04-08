@@ -165,10 +165,14 @@ function workerByRole(proj, role) {
   return null;
 }
 
+function isAutopilotWorkerSession(s) {
+  return s.projectId && s.roleName && s.presetId !== 'shell';
+}
+
 function discoverWorkers(pid) {
   const workers = new Map();
   const status = new Map();
-  for (const s of api.getSessions().filter(s => s.projectId === pid && s.roleName)) {
+  for (const s of api.getSessions().filter(s => s.projectId === pid && isAutopilotWorkerSession(s))) {
     workers.set(s.id, { role: s.roleName, name: s.name, presetId: s.presetId });
     // Sessions start idle. Status is tracked by notifyStatus() on every
     // working/idle transition. If s.working is undefined, no transition was
@@ -182,7 +186,7 @@ function discoverWorkers(pid) {
 function refreshWorkers(pid, proj) {
   const live = new Map();
   const liveStatus = new Map();
-  for (const s of api.getSessions().filter(s => s.projectId === pid && s.roleName)) {
+  for (const s of api.getSessions().filter(s => s.projectId === pid && isAutopilotWorkerSession(s))) {
     live.set(s.id, { role: s.roleName, name: s.name, presetId: s.presetId });
     liveStatus.set(s.id, s.working === true);
   }

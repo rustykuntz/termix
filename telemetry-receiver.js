@@ -10,6 +10,7 @@ const codexMenuPoll = new Map(); // sessionId → interval (polling for menu aft
 const codexPendingStop = new Map(); // sessionId → ts (notify hook arrived; wait for next response.completed)
 const codexOutputDone = new Map(); // sessionId → ts (fallback if notify never fires)
 const codexPendingIdle = new Map(); // sessionId → timer (tiny settle before committing idle)
+const codexPendingTool = new Set(); // sessionId set while Codex has emitted a tool call that has not produced a result yet
 let broadcastFn = null;
 let sessionsFn = null;
 
@@ -100,7 +101,15 @@ function handleLogs(req, res) {
         if (eventName === 'codex.user_prompt') {
           codexPendingStop.delete(resolvedId);
           codexOutputDone.delete(resolvedId);
+          codexPendingTool.delete(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
+        }
+
+        // Function-call output item completion is not end-of-turn. Codex may
+        // next wait for a tool result for seconds or hours; don't go idle until
+        // that result arrives and Codex later emits a real completion.
+        if (eventName === 'codex.websocket_event' && attrs['event.kind'] === 'response.function_call_arguments.done') {
+          codexPendingTool.add(resolvedId);
         }
 
         // Fallback: when notify does not fire, require an output item to finish
@@ -113,7 +122,10 @@ function handleLogs(req, res) {
         // Also poll briefly for a visible choice menu.
         if (eventName === 'codex.sse_event' && attrs['event.kind'] === 'response.completed') {
           const pendingStopAt = codexPendingStop.get(resolvedId);
-          if (pendingStopAt && Date.now() - pendingStopAt <= 5000) {
+          if (codexPendingTool.has(resolvedId)) {
+            // Tool execution is still in-flight; this completion only closed the
+            // function-call phase, not the user's full turn.
+          } else if (pendingStopAt && Date.now() - pendingStopAt <= 5000) {
             // console.log(`[codex] complete matched pending-stop session=${resolvedId.slice(0,8)} age=${Date.now() - pendingStopAt}ms`);
             codexPendingStop.delete(resolvedId);
             codexOutputDone.delete(resolvedId);
@@ -134,8 +146,12 @@ function handleLogs(req, res) {
         if (eventName === 'codex.tool_decision') {
           codexPendingStop.delete(resolvedId);
           codexOutputDone.delete(resolvedId);
+          codexPendingTool.add(resolvedId);
           cancelCodexMenuPoll(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
+        }
+        if (eventName === 'codex.tool_result') {
+          codexPendingTool.delete(resolvedId);
         }
         // Codex: user_prompt or next sse_event cancels menu poll
         if ((eventName === 'codex.user_prompt' || (eventName === 'codex.sse_event' && attrs['event.kind'] !== 'response.completed'))) {
@@ -228,6 +244,7 @@ function clear(id) {
   cancelCodexPendingIdle(id);
   codexPendingStop.delete(id);
   codexOutputDone.delete(id);
+  codexPendingTool.delete(id);
   const pending = pendingSetup.get(id);
   if (pending) { clearTimeout(pending.timer); pendingSetup.delete(id); }
 }

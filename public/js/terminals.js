@@ -781,6 +781,7 @@ export function startProjectRename(projectId) {
 // --- Project grouping ---
 
 const CHEVRON_SVG = `<svg class="w-3 h-3 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>`;
+const PATH_SVG = `<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.379a1.5 1.5 0 0 1 1.06.44l1.122 1.12a1.5 1.5 0 0 0 1.06.44H19.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10Z"/></svg>`;
 
 const PROJECT_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#84cc16'];
 
@@ -817,6 +818,9 @@ export function regroupSessions() {
         <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${projectColor(proj)}"></span>
         <span class="project-name flex-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 truncate">${esc(proj.name)}</span>
         <span class="project-count text-[10px] text-slate-600">0</span>
+        <button class="project-path-btn opacity-0 group-hover:opacity-100 ${proj.path ? 'text-slate-600 hover:text-slate-300' : 'text-slate-700 cursor-default'} flex-shrink-0 transition-opacity p-0.5" title="${proj.path ? 'Open project folder' : 'Project path not set'}" ${proj.path ? '' : 'disabled'}>
+          ${PATH_SVG}
+        </button>
         <span class="project-plugin-actions"></span>
         <button class="project-menu-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-slate-400 flex-shrink-0 transition-opacity p-0.5" title="Project menu">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 20 20"><circle cx="10" cy="4" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="16" r="1.5" fill="currentColor"/></svg>

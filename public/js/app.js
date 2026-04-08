@@ -231,6 +231,9 @@ function connect() {
         }
         break;
       }
+      case 'project.openPath.result':
+        if (!msg.success) showToast(msg.error || 'Failed to open project folder', { type: 'error' });
+        break;
       case 'sessions.saved':
         flashSaveIndicator();
         break;
@@ -326,6 +329,11 @@ sessionList.addEventListener('click', (e) => {
 
   // Project header click — toggle collapse (skip if just finished a drag)
   const projHeader = e.target.closest('.project-header');
+  if (e.target.closest('.project-path-btn')) {
+    const projId = e.target.closest('.project-header')?.dataset.projectId;
+    if (projId) send({ type: 'project.openPath', id: projId });
+    return;
+  }
   if (e.target.closest('.plugin-project-btn')) return; // handled by btn's own click listener
   if (projHeader && !e.target.closest('.project-menu-btn') && !wasDragging()) {
     toggleProjectCollapse(projHeader.dataset.projectId);
