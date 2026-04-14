@@ -10,9 +10,41 @@ const codexMenuPoll = new Map(); // sessionId → interval (polling for menu aft
 const codexPendingStop = new Map(); // sessionId → ts (notify hook arrived; wait for next response.completed)
 const codexOutputDone = new Map(); // sessionId → ts (fallback if notify never fires)
 const codexPendingIdle = new Map(); // sessionId → timer (tiny settle before committing idle)
-const codexPendingTool = new Set(); // sessionId set while Codex has emitted a tool call that has not produced a result yet
+const codexToolPhasePending = new Set(); // sessionId set once Codex has announced a tool-call phase, cleared when the phase resolves
+const codexPendingTools = new Map(); // sessionId → Set(callId) for approved Codex tool calls still awaiting a result
 let broadcastFn = null;
 let sessionsFn = null;
+
+function getPendingToolSet(id) {
+  let set = codexPendingTools.get(id);
+  if (!set) { set = new Set(); codexPendingTools.set(id, set); }
+  return set;
+}
+
+function clearPendingTools(id) {
+  codexPendingTools.delete(id);
+}
+
+function addPendingTool(id, callId) {
+  if (!callId) return;
+  getPendingToolSet(id).add(callId);
+}
+
+function resolvePendingTool(id, callId) {
+  if (!callId) return;
+  const set = codexPendingTools.get(id);
+  if (!set) return;
+  set.delete(callId);
+  if (!set.size) codexPendingTools.delete(id);
+}
+
+function hasPendingTools(id) {
+  return !!codexPendingTools.get(id)?.size;
+}
+
+function hasPendingToolState(id) {
+  return codexToolPhasePending.has(id) || hasPendingTools(id);
+}
 
 function init(broadcast, getSessions) {
   broadcastFn = broadcast;
@@ -78,11 +110,8 @@ function handleLogs(req, res) {
         // Debug telemetry logs — uncomment as needed, do not delete
         // if (serviceName === 'claude-code' && eventName) console.log(`[telemetry:claude] ${eventName}`);
         // if (serviceName === 'codex_cli_rs' && eventName) {
-        //   const details = Object.entries(attrs)
-        //     .filter(([k]) => k !== 'event.name')
-        //     .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-        //     .join(' ');
-        //   console.log(`[telemetry:codex] ${eventName} session=${resolvedId.slice(0,8)}${details ? ' ' + details : ''}`);
+        //   const kind = attrs['event.kind'] ? ` kind=${attrs['event.kind']}` : '';
+        //   console.log(`[telemetry:codex] ${eventName}${kind} session=${resolvedId.slice(0,8)}`);
         // }
         // if (serviceName === 'gemini-cli' && eventName) console.log(`[telemetry:gemini] ${eventName}`);
 
@@ -101,15 +130,16 @@ function handleLogs(req, res) {
         if (eventName === 'codex.user_prompt') {
           codexPendingStop.delete(resolvedId);
           codexOutputDone.delete(resolvedId);
-          codexPendingTool.delete(resolvedId);
+          codexToolPhasePending.delete(resolvedId);
+          clearPendingTools(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
         }
 
-        // Function-call output item completion is not end-of-turn. Codex may
-        // next wait for a tool result for seconds or hours; don't go idle until
-        // that result arrives and Codex later emits a real completion.
+        // Codex can announce a function-call phase before the later tool_decision
+        // event carries a call_id. Block idle as soon as the tool phase is known,
+        // then refine it to call-specific tracking when tool_decision arrives.
         if (eventName === 'codex.websocket_event' && attrs['event.kind'] === 'response.function_call_arguments.done') {
-          codexPendingTool.add(resolvedId);
+          codexToolPhasePending.add(resolvedId);
         }
 
         // Fallback: when notify does not fire, require an output item to finish
@@ -122,7 +152,7 @@ function handleLogs(req, res) {
         // Also poll briefly for a visible choice menu.
         if (eventName === 'codex.sse_event' && attrs['event.kind'] === 'response.completed') {
           const pendingStopAt = codexPendingStop.get(resolvedId);
-          if (codexPendingTool.has(resolvedId)) {
+          if (hasPendingToolState(resolvedId)) {
             // Tool execution is still in-flight; this completion only closed the
             // function-call phase, not the user's full turn.
           } else if (pendingStopAt && Date.now() - pendingStopAt <= 5000) {
@@ -146,12 +176,17 @@ function handleLogs(req, res) {
         if (eventName === 'codex.tool_decision') {
           codexPendingStop.delete(resolvedId);
           codexOutputDone.delete(resolvedId);
-          codexPendingTool.add(resolvedId);
+          if ((attrs.decision || '').toLowerCase() !== 'denied') {
+            addPendingTool(resolvedId, attrs.call_id || attrs['call.id']);
+          } else {
+            codexToolPhasePending.delete(resolvedId);
+          }
           cancelCodexMenuPoll(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
         }
         if (eventName === 'codex.tool_result') {
-          codexPendingTool.delete(resolvedId);
+          codexToolPhasePending.delete(resolvedId);
+          resolvePendingTool(resolvedId, attrs.call_id || attrs['call.id']);
         }
         // Codex: user_prompt or next sse_event cancels menu poll
         if ((eventName === 'codex.user_prompt' || (eventName === 'codex.sse_event' && attrs['event.kind'] !== 'response.completed'))) {
@@ -244,7 +279,8 @@ function clear(id) {
   cancelCodexPendingIdle(id);
   codexPendingStop.delete(id);
   codexOutputDone.delete(id);
-  codexPendingTool.delete(id);
+  codexToolPhasePending.delete(id);
+  clearPendingTools(id);
   const pending = pendingSetup.get(id);
   if (pending) { clearTimeout(pending.timer); pendingSetup.delete(id); }
 }

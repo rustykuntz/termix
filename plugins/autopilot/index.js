@@ -10,6 +10,7 @@ const DATA_DIR = join(require('os').homedir(), '.clideck', 'autopilot');
 const projects = new Map();   // projectId → Project
 const tokenUsage = new Map(); // projectId → { input, output }
 const menuPending = new Set(); // sessionIds with a menu awaiting auto-approve
+const idleCaptureTimers = new Map(); // sessionId → timeout id for deferred idle capture
 let api = null;
 let piAi = null;
 
@@ -84,6 +85,7 @@ function latestAgentOutput(id) {
 // --- Consumed state (persisted per-project: role → boolean) ---
 
 function captureIdleOutput(id, pid, proj) {
+  idleCaptureTimers.delete(id);
   if (!projects.has(pid)) return;
   if (proj.status.get(id)) return;
   const w = proj.workers.get(id);
@@ -112,6 +114,19 @@ function captureIdleOutput(id, pid, proj) {
     }
     triggerConsult(pid, proj);
   }
+}
+
+function clearIdleCaptureTimer(id) {
+  const timer = idleCaptureTimers.get(id);
+  if (timer) {
+    clearTimeout(timer);
+    idleCaptureTimers.delete(id);
+  }
+}
+
+function scheduleIdleCapture(id, pid, proj) {
+  clearIdleCaptureTimer(id);
+  idleCaptureTimers.set(id, setTimeout(() => captureIdleOutput(id, pid, proj), 5000));
 }
 
 function resetProjectState(pid) {
@@ -673,6 +688,7 @@ async function start(pid) {
 function stop(pid, keepPill) {
   const proj = projects.get(pid);
   if (!proj) return;
+  for (const [sid] of proj.workers) clearIdleCaptureTimer(sid);
   for (const [sid] of proj.workers) api.setAutoApproveMenu(sid, false);
   projects.delete(pid);
   // api.log(`Stopped: ${pid}`);
@@ -714,7 +730,10 @@ module.exports.init = function (pluginApi) {
   api.onMenuDetected((id, choices) => {
     if (!choices?.length) return;
     const [pid] = projectFor(id);
-    if (pid) menuPending.add(id);
+    if (pid) {
+      menuPending.add(id);
+      clearIdleCaptureTimer(id);
+    }
   });
 
   // Status change — the main routing trigger (only when ALL workers are idle)
@@ -725,9 +744,13 @@ module.exports.init = function (pluginApi) {
     const w = proj.workers.get(id);
     const role = w?.role || id.slice(0, 8);
 
-    if (working) { menuPending.delete(id); }
+    if (working) {
+      menuPending.delete(id);
+      clearIdleCaptureTimer(id);
+    }
 
     if (!working && menuPending.has(id)) {
+      clearIdleCaptureTimer(id);
       menuPending.delete(id);
       // api.log(`[status] ${role} → IDLE (menu pending — suppressed)`);
       return;
@@ -744,7 +767,7 @@ module.exports.init = function (pluginApi) {
     if (!proj.workers.has(id)) return;
 
     api.appendPillLog(pillId, `${role} → idle`);
-    setTimeout(() => captureIdleOutput(id, pid, proj), 5000);
+    scheduleIdleCapture(id, pid, proj);
   });
 
   // Frontend queries

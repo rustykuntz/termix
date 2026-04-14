@@ -15,19 +15,13 @@ import { renderPrompts } from './prompts.js';
 import { renderRoles } from './roles.js';
 
 const shownAgentHealthToasts = new Set();
+let reconnectReplaySkip = null;
 
 function connect() {
   state.ws = new WebSocket(`ws://${location.host}`);
 
   state.ws.onopen = () => {
-    for (const [, e] of state.terms) { e.ro.disconnect(); e.term.dispose(); e.el.remove(); }
-    state.terms.clear();
-    state.pills.clear();
-    state.activePill = null;
-    document.getElementById('session-list').innerHTML = '';
-    document.getElementById('pill-log-panel')?.remove();
-    state.active = null;
-    document.getElementById('empty').style.display = 'flex';
+    reconnectReplaySkip = new Set(state.terms.keys());
     send({ type: 'remote.status' });
   };
 
@@ -64,8 +58,16 @@ function connect() {
         renderResumable();
         break;
       case 'sessions':
-        msg.list.forEach(s => addTerminal(s.id, s.name, s.themeId, s.commandId, s.projectId, s.muted, s.lastPreview, s.presetId));
-        if (msg.list.length) select(msg.list[0].id);
+        {
+          const liveIds = new Set(msg.list.map(s => s.id));
+          for (const id of [...state.terms.keys()]) {
+            if (!liveIds.has(id)) removeTerminal(id);
+          }
+          msg.list.forEach(s => addTerminal(s.id, s.name, s.themeId, s.commandId, s.projectId, s.muted, s.lastPreview, s.presetId));
+          if (!state.active || !state.terms.has(state.active)) {
+            if (msg.list.length) select(msg.list[0].id);
+          }
+        }
         break;
       case 'created':
         if (!state.terms.has(msg.id)) addTerminal(msg.id, msg.name, msg.themeId, msg.commandId, msg.projectId, msg.muted, msg.lastPreview, msg.presetId);
@@ -75,6 +77,7 @@ function connect() {
         break;
       case 'output': {
         const entry = state.terms.get(msg.id);
+        if (msg.replay && reconnectReplaySkip?.has(msg.id) && entry) break;
         if (entry && !entry.queue(msg.data)) entry.term.write(msg.data);
         updatePreview(msg.id);
         markUnread(msg.id);
@@ -104,6 +107,7 @@ function connect() {
       }
       case 'session.history': {
         const entry = state.terms.get(msg.id);
+        if (msg.replay && reconnectReplaySkip?.has(msg.id) && entry) break;
         if (entry && !entry.queue(msg.text + '\n')) entry.term.write(msg.text + '\n');
         updatePreview(msg.id);
         break;
@@ -254,8 +258,16 @@ function connect() {
         break;
       }
       case 'pills':
-        state.pills.clear();
-        for (const p of msg.list) addPill(p);
+        {
+          const liveIds = new Set(msg.list.map(p => p.id));
+          for (const id of [...state.pills.keys()]) {
+            if (!liveIds.has(id)) removePill(id);
+          }
+          for (const p of msg.list) {
+            if (state.pills.has(p.id)) updatePill(p);
+            else addPill(p);
+          }
+        }
         break;
       case 'pill.added':
         addPill(msg.pill);

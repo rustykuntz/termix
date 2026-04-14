@@ -62,12 +62,14 @@ function startBounce(container) {
     return { el: c, x: 10 + i * rand(14, 22), y: floor - rand(0, 15), vx: rand(0.6, 1.3), vy: -rand(2.5, 5), r: radii[i] };
   });
 
-  let raf;
-  function step() {
+  let raf, lastFrame = 0;
+  function step(now = performance.now()) {
+    const dt = lastFrame ? Math.min((now - lastFrame) / 16.67, 4) : 1;
+    lastFrame = now;
     balls.forEach(b => {
-      b.vy += gravity;
-      b.x += b.vx;
-      b.y += b.vy;
+      b.vy += gravity * dt;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
       if (b.y > floor) { b.y = floor; b.vy *= -restitution; }
     });
     for (let i = 0; i < balls.length; i++) {
@@ -440,16 +442,19 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
     fitRaf = requestAnimationFrame(() => { fitRaf = 0; doFit(); });
   });
   ro.observe(el);
-  // Safety: if RO hasn't fired within 500ms, flush anyway to avoid unbounded queue.
-  // If the element is hidden (background tab), force a reasonable default size so the PTY
-  // doesn't stay at a tiny default and produce garbled output.
+  // Safety: if RO hasn't fired within 500ms, let visible terminals proceed.
+  // For hidden/unmeasured terminals, keep the PTY at a reasonable fallback size
+  // but do not flush queued output until a real measured fit happens; replaying
+  // buffered output into fake geometry is what leaves the rebuilt terminal messy
+  // after refresh/logout/login.
   setTimeout(() => {
     if (!fitted) {
-      fitted = true;
       if (!el.offsetWidth) {
         term.resize(120, 30);
         send({ type: 'resize', id, cols: 120, rows: 30 });
+        return;
       }
+      fitted = true;
       for (const chunk of pending) term.write(chunk);
       pending = null;
       updatePreview(id);

@@ -447,9 +447,15 @@ function sendBuffers(ws) {
   for (const [id, s] of sessions) {
     if (['claude-code', 'codex', 'gemini-cli', 'opencode'].includes(s.presetId) && !s.working) {
       const text = transcript.getReplayText(id, s.presetId);
-      if (text) { ws.send(JSON.stringify({ type: 'session.history', id, text })); continue; }
+      if (text) {
+        ws.send(JSON.stringify({ type: 'session.history', id, text, replay: true }));
+        continue;
+      }
     }
-    if (s.chunks.length) ws.send(JSON.stringify({ type: 'output', id, data: s.chunks.join('') }));
+    if (s.chunks.length) {
+      const data = s.chunks.join('');
+      ws.send(JSON.stringify({ type: 'output', id, data, replay: true }));
+    }
   }
 }
 

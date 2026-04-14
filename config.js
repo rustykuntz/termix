@@ -129,10 +129,13 @@ function migrate(cfg) {
     if (cmd.telemetryStatus === undefined)  cmd.telemetryStatus = null;
     // Sync bridge config from preset
     if (preset?.bridge) cmd.bridge = preset.bridge;
-    // Codex: add --no-alt-screen to avoid blank screen in embedded xterm
+    // Codex: keep shipped default commands aligned with the current preset.
+    // Only rewrite the known default strings so custom Codex commands stay intact.
     if (preset?.presetId === 'codex') {
-      if (cmd.command === 'codex') cmd.command = preset.command;
-      if (cmd.resumeCommand === 'codex resume {{sessionId}}') cmd.resumeCommand = preset.resumeCommand;
+      if (cmd.command === 'codex' || cmd.command === 'codex --no-alt-screen') cmd.command = preset.command;
+      if (cmd.resumeCommand === 'codex resume {{sessionId}}' || cmd.resumeCommand === 'codex resume {{sessionId}} --no-alt-screen') {
+        cmd.resumeCommand = preset.resumeCommand;
+      }
     }
   }
   // Auto-add any shipped presets not yet in the commands list
