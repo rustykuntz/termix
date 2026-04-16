@@ -188,25 +188,36 @@ function getUsers(id) {
   return (entriesById[id] || []).filter(e => e.role === 'user').map(e => e.text);
 }
 
-function getLastTurns(id, n) {
-  n = n || 4;
+function readEntries(id) {
   const file = fpath(id);
   if (!existsSync(file)) return [];
   try {
-    const lines = readFileSync(file, 'utf8').trim().split('\n');
-    const turns = [];
-    for (let i = lines.length - 1; i >= 0; i--) {
-      let entry;
-      try { entry = JSON.parse(lines[i]); } catch { continue; }
-      if (turns.length && turns[turns.length - 1].role === entry.role) {
-        turns[turns.length - 1].text = entry.text + '\n' + turns[turns.length - 1].text;
-      } else {
-        turns.push({ role: entry.role, text: entry.text });
-        if (turns.length >= n) break;
-      }
-    }
-    return turns.reverse();
+    const cached = entriesById[id];
+    if (Array.isArray(cached) && cached.length) return cached;
+    const lines = readFileSync(file, 'utf8').trim().split('\n').filter(Boolean);
+    return lines.map(line => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);
   } catch { return []; }
+}
+
+function foldTurns(entries, n, order) {
+  const turns = [];
+  const fromStart = order === 'start';
+  const list = fromStart ? entries : [...entries].reverse();
+  for (const entry of list) {
+    if (turns.length && turns[turns.length - 1].role === entry.role) {
+      if (fromStart) turns[turns.length - 1].text += '\n' + entry.text;
+      else turns[turns.length - 1].text = entry.text + '\n' + turns[turns.length - 1].text;
+    } else {
+      turns.push({ role: entry.role, text: entry.text });
+      if (turns.length >= n) break;
+    }
+  }
+  return fromStart ? turns : turns.reverse();
+}
+
+function getTurns(id, n, order) {
+  n = n || 4;
+  return foldTurns(readEntries(id), n, order || 'end');
 }
 
 function getCache() { return { ...cache }; }
@@ -265,4 +276,4 @@ function detectMenu(lines, presetId) {
   return choices.length ? choices : null;
 }
 
-module.exports = { init, trackInput, recordInjectedInput, trackOutput, updateAgentCandidate, commitAgentCandidate, clearAgentCandidate, parseTurnsFromLines, getLastTurns, getCache, getReplayText, clear, setPrefix, setFinalizeOnIdle, detectMenu };
+module.exports = { init, trackInput, recordInjectedInput, trackOutput, updateAgentCandidate, commitAgentCandidate, clearAgentCandidate, parseTurnsFromLines, getTurns, getCache, getReplayText, clear, setPrefix, setFinalizeOnIdle, detectMenu };

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Experiment"
+  short_description: "Run parallel autonomous experiments in isolated git worktrees."
+  default_prompt: "Use this skill to prepare and coordinate autonomous research agents that experiment in isolated git worktrees without touching production code."

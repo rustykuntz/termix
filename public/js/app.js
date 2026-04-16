@@ -12,7 +12,6 @@ import './nav.js';
 import { initDrag, wasDragging } from './drag.js';
 import { registerHotkey, unregisterHotkey, unregisterAllForPlugin } from './hotkeys.js';
 import { renderPrompts } from './prompts.js';
-import { renderRoles } from './roles.js';
 
 const shownAgentHealthToasts = new Set();
 let reconnectReplaySkip = null;
@@ -34,7 +33,6 @@ function connect() {
         regroupSessions();
         renderSettings();
         renderPrompts();
-        renderRoles();
         refreshCreator();
         for (const [, entry] of state.terms) applyTheme(entry.term, entry.themeId);
         break;
@@ -682,13 +680,16 @@ function openProjectCreator() {
   card.id = 'project-creator';
   card.className = 'p-3 border-b border-slate-700/50 bg-slate-800/30';
   card.innerHTML = `
-    <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-2">New Project</div>
+    <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">Project folder</div>
     <div class="flex items-center gap-1.5 mb-2">
       <input id="pc-path" type="text" value="${esc(defaultPath)}" placeholder="Project folder path"
         class="flex-1 px-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-md text-slate-400 placeholder-slate-600 outline-none focus:border-blue-500 transition-colors font-mono">
       <button id="pc-browse" class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md border border-slate-700 text-slate-500 hover:text-slate-300 hover:bg-slate-700 transition-colors" title="Browse">
         ${FOLDER_SVG}
       </button>
+    </div>
+    <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+      Project name <span class="text-slate-600 font-medium normal-case tracking-normal">(auto-filled from folder name)</span>
     </div>
     <input id="pc-name" type="text" maxlength="35" placeholder="Project name"
       class="w-full px-3 py-2 text-sm bg-slate-900 border border-slate-700 rounded-md text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 transition-colors mb-2">
@@ -1016,7 +1017,7 @@ function renderProjectActions() {
     if (!projId) continue;
     for (const action of actions) {
       const btn = document.createElement('button');
-      btn.className = 'project-plugin-action plugin-project-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-indigo-400 flex-shrink-0 transition-opacity p-0.5';
+      btn.className = 'project-plugin-action plugin-project-btn text-slate-600 hover:text-indigo-400 flex-shrink-0 p-0.5';
       btn.title = action.title || '';
       btn.innerHTML = action.icon || '';
       btn.dataset.pluginId = action.pluginId;

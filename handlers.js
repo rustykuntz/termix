@@ -509,7 +509,7 @@ function onConnection(ws) {
       }
 
       case 'remote.getHistory': {
-        ws.send(JSON.stringify({ type: 'remote.history', id: msg.id, turns: transcript.getLastTurns(msg.id, 20) }));
+        ws.send(JSON.stringify({ type: 'remote.history', id: msg.id, turns: transcript.getTurns(msg.id, 20, 'end') }));
         break;
       }
 

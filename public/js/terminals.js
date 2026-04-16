@@ -3,6 +3,7 @@ import { esc, miniMarkdown, resolveIconPath } from './utils.js';
 import { resolveTheme, resolveAccent, applyTheme } from './profiles.js';
 import { attachToTerminal, registerHotkey } from './hotkeys.js';
 import { closeDropdown } from './prompts.js';
+import { showToast } from './toast.js';
 function isLightBg(themeId) {
   const bg = resolveTheme(themeId)?.background;
   if (!bg || bg[0] !== '#') return false;
@@ -119,26 +120,67 @@ function positionMenu(menu, anchorRect) {
   menu.style.visibility = 'hidden';
   document.body.appendChild(menu);
   const mh = menu.offsetHeight;
+  const mw = menu.offsetWidth;
   const gap = 4;
   const spaceBelow = window.innerHeight - anchorRect.bottom - gap;
+  const left = Math.min(
+    Math.max(gap, anchorRect.left),
+    Math.max(gap, window.innerWidth - mw - gap)
+  );
   menu.style.top = (spaceBelow >= mh
     ? anchorRect.bottom + gap
     : Math.max(gap, anchorRect.top - gap - mh)) + 'px';
-  menu.style.right = (window.innerWidth - anchorRect.right) + 'px';
+  menu.style.left = left + 'px';
   menu.style.visibility = '';
 }
 
-function openMenu(sessionId, anchorEl) {
+function pointRect(x, y) {
+  return { top: y, bottom: y, left: x, right: x };
+}
+
+async function copyTerminalSelection(sessionId) {
+  const entry = state.terms.get(sessionId);
+  const text = entry?.term?.getSelection() || '';
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    showToast('Clipboard write failed.', { type: 'error' });
+  }
+}
+
+async function pasteIntoTerminal(sessionId) {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) send({ type: 'input', id: sessionId, data: text });
+  } catch {
+    showToast('Clipboard read failed.', { type: 'error' });
+  }
+}
+
+function openMenu(sessionId, anchor) {
   closeMenu();
 
-  const rect = anchorEl.getBoundingClientRect();
+  const rect = anchor?.getBoundingClientRect ? anchor.getBoundingClientRect() : pointRect(anchor.x, anchor.y);
   const menu = document.createElement('div');
   menu.className = 'fixed z-[400] min-w-[160px] bg-slate-800 border border-slate-700 rounded-lg shadow-xl shadow-black/40 py-1';
 
   const entry = state.terms.get(sessionId);
   const projects = state.cfg.projects || [];
+  const hasSelection = !!entry?.term?.hasSelection();
 
   let html = '';
+
+  html += `
+    <button class="menu-action flex items-center gap-2.5 w-full px-3 py-2 text-sm ${hasSelection ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 cursor-default'} transition-colors text-left" data-action="copy" ${hasSelection ? '' : 'disabled'}>
+      <span class="flex-shrink-0 text-slate-400"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span>
+      Copy
+    </button>
+    <button class="menu-action flex items-center gap-2.5 w-full px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 transition-colors text-left" data-action="paste">
+      <span class="flex-shrink-0 text-slate-400"><svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/><path d="M8 2h6a2 2 0 0 1 2 2v6H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"/><path d="M8 10v4"/><path d="M12 14H4a2 2 0 0 0-2 2v2"/></svg></span>
+      Paste
+    </button>
+    <div class="border-t border-slate-700/50 my-1"></div>`;
 
   // Project submenu items
   if (projects.length) {
@@ -187,12 +229,16 @@ function openMenu(sessionId, anchorEl) {
   menu.innerHTML = html;
   positionMenu(menu, rect);
 
-  const onClick = (e) => {
+  const onClick = async (e) => {
     const btn = e.target.closest('.menu-action');
     if (!btn) return;
     closeMenu();
     const action = btn.dataset.action;
-    if (action === 'rename') {
+    if (action === 'copy') {
+      await copyTerminalSelection(sessionId);
+    } else if (action === 'paste') {
+      await pasteIntoTerminal(sessionId);
+    } else if (action === 'rename') {
       startRename(sessionId);
     } else if (action === 'mute') {
       toggleMute(sessionId);
@@ -417,6 +463,14 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
 
   term.open(el);
   attachToTerminal(term, presetId);
+  const onContextMenu = (e) => {
+    if (e.shiftKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    select(id);
+    openMenu(id, { x: e.clientX, y: e.clientY });
+  };
+  el.addEventListener('contextmenu', onContextMenu);
   let fitted = false, pending = [];
   // [FIT-GUARD] only call fit() when proposed dimensions actually change — prevents
   // unnecessary buffer reflows that cause scrollbar jumpiness on sub-pixel layout shifts
@@ -461,7 +515,7 @@ export function addTerminal(id, name, themeId, commandId, projectId, muted, last
     }
   }, 500);
   const cancelFitRaf = () => { if (fitRaf) { cancelAnimationFrame(fitRaf); fitRaf = 0; } };
-  state.terms.set(id, { term, fit, el, ro, cancelFitRaf, themeId, commandId, presetId: presetId || null, projectId: projectId || null, muted: !!muted, working: false, workStartedAt: null, stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '' });
+  state.terms.set(id, { term, fit, el, ro, cancelFitRaf, onContextMenu, themeId, commandId, presetId: presetId || null, projectId: projectId || null, muted: !!muted, working: false, workStartedAt: null, stopBounce, queue: (data) => { if (!fitted) { pending.push(data); return true; } return false; }, lastActivityAt: Date.now(), unread: false, lastPreviewText: lastPreview || '', searchText: '' });
   document.getElementById('empty').style.display = 'none';
   document.getElementById('terminals').style.pointerEvents = '';
   if (muted) requestAnimationFrame(() => updateMuteIndicator(id));
@@ -475,6 +529,7 @@ export function removeTerminal(id) {
   if (entry.stopBounce) entry.stopBounce();
   entry.cancelFitRaf?.();
   entry.ro?.disconnect();
+  entry.el.removeEventListener?.('contextmenu', entry.onContextMenu);
   entry.term.dispose();
   entry.el.remove();
   state.terms.delete(id);
@@ -823,11 +878,11 @@ export function regroupSessions() {
         <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${projectColor(proj)}"></span>
         <span class="project-name flex-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 truncate">${esc(proj.name)}</span>
         <span class="project-count text-[10px] text-slate-600">0</span>
-        <button class="project-path-btn opacity-0 group-hover:opacity-100 ${proj.path ? 'text-slate-600 hover:text-slate-300' : 'text-slate-700 cursor-default'} flex-shrink-0 transition-opacity p-0.5" title="${proj.path ? 'Open project folder' : 'Project path not set'}" ${proj.path ? '' : 'disabled'}>
+        <button class="project-path-btn ${proj.path ? 'text-slate-600 hover:text-slate-300' : 'text-slate-700 cursor-default'} flex-shrink-0 p-0.5" title="${proj.path ? 'Open project folder' : 'Project path not set'}" ${proj.path ? '' : 'disabled'}>
           ${PATH_SVG}
         </button>
         <span class="project-plugin-actions"></span>
-        <button class="project-menu-btn opacity-0 group-hover:opacity-100 text-slate-600 hover:text-slate-400 flex-shrink-0 transition-opacity p-0.5" title="Project menu">
+        <button class="project-menu-btn text-slate-600 hover:text-slate-400 flex-shrink-0 p-0.5" title="Project menu">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 20 20"><circle cx="10" cy="4" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="16" r="1.5" fill="currentColor"/></svg>
         </button>
       </div>

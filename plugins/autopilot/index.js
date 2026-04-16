@@ -5,6 +5,12 @@ const { join } = require('path');
 const crypto = require('crypto');
 
 const DATA_DIR = join(require('os').homedir(), '.clideck', 'autopilot');
+const GOALS_DIR = join(DATA_DIR, 'goals');
+const GOAL_PREFIX = 'AUTOPILOT GOAL:';
+const FIRST_USER_MESSAGES = 3;
+const FIRST_TURN_SCAN = 50;
+const GOAL_SEARCH_TURNS = 2000;
+const MAX_GOAL_MESSAGE_CHARS = 100000;
 
 // --- State ---
 const projects = new Map();   // projectId → Project
@@ -16,6 +22,7 @@ let piAi = null;
 
 function enabled() { return api.getSetting('enabled') !== false; }
 function safeId(id) { return String(id).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64); }
+function pillId(pid) { return `autopilot-${pid}`; }
 
 function outputId(text) {
   const normalized = (text || '').trim().replace(/\s+/g, ' ');
@@ -33,6 +40,7 @@ async function ai() {
 // --- KB (routing history) ---
 
 function kbPath(pid) { return join(DATA_DIR, `${safeId(pid)}.jsonl`); }
+function goalPath(pid) { return join(GOALS_DIR, `${safeId(pid)}.json`); }
 
 function appendKB(pid, entry) {
   mkdirSync(DATA_DIR, { recursive: true });
@@ -47,6 +55,21 @@ function readKB(pid, n) {
     const entries = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
     return n ? entries.slice(-n) : entries;
   } catch { return []; }
+}
+
+function loadGoal(pid) {
+  const p = goalPath(pid);
+  if (!existsSync(p)) return null;
+  try {
+    const goal = JSON.parse(readFileSync(p, 'utf8'));
+    return goal?.text ? goal : null;
+  } catch { return null; }
+}
+
+function saveGoal(pid, goal) {
+  if (!goal?.text) return;
+  mkdirSync(GOALS_DIR, { recursive: true });
+  writeFileSync(goalPath(pid), JSON.stringify(goal, null, 2));
 }
 
 // --- Token usage ---
@@ -82,6 +105,120 @@ function latestAgentOutput(id) {
   return last?.text?.trim().slice(0, 8000) || null;
 }
 
+function usageTotals(usage) {
+  const input = usage?.input || 0;
+  const output = usage?.output || 0;
+  return { input, output, total: input + output };
+}
+
+function formatTokenLog(label, usage, source) {
+  const t = usageTotals(usage);
+  return `${label} tokens (${source}): in ${t.input}, out ${t.output}, total ${t.total}`;
+}
+
+function firstUserMessages(id, n) {
+  return api.getTranscript(id, FIRST_TURN_SCAN, 'start')
+    .filter(t => t.role === 'user')
+    .slice(0, n)
+    .map(t => String(t.text || '').trim())
+    .filter(Boolean);
+}
+
+function extractExplicitGoal(text) {
+  const lines = String(text || '').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed.toUpperCase().startsWith(GOAL_PREFIX)) continue;
+    const first = trimmed.slice(GOAL_PREFIX.length).trim();
+    const rest = lines.slice(i + 1).join('\n').trim();
+    return [first, rest].filter(Boolean).join('\n').replace(/\s+/g, ' ').trim();
+  }
+  return '';
+}
+
+function isUnclearGoal(text) {
+  const normalized = String(text || '').trim().replace(/^["'\s]+|["'\s]+$/g, '').toLowerCase();
+  return normalized === 'unclear_goal';
+}
+
+function findExplicitGoal(proj) {
+  const found = [];
+  for (const [sid, w] of proj.workers) {
+    const turns = api.getTranscript(sid, GOAL_SEARCH_TURNS, 'start');
+    for (const turn of turns) {
+      if (turn.role !== 'user') continue;
+      const goal = extractExplicitGoal(turn.text);
+      if (!goal) continue;
+      found.push({ goal, worker: w.label, sessionId: sid });
+    }
+  }
+  const unique = [...new Set(found.map(x => x.goal))];
+  if (!unique.length) return { goal: null };
+  if (unique.length > 1) {
+    return {
+      error: `Found multiple explicit project goals. Keep one \`${GOAL_PREFIX}\` message in an existing worker session and restart Autopilot.`,
+    };
+  }
+  return {
+    goal: {
+      text: unique[0],
+      builtAt: new Date().toISOString(),
+      source: 'explicit-message',
+    },
+  };
+}
+
+function goalSourceContext(proj) {
+  const sections = [];
+  for (const [sid, w] of proj.workers) {
+    const messages = firstUserMessages(sid, FIRST_USER_MESSAGES);
+    if (!messages.length) continue;
+    const body = messages.map((text, idx) => {
+      const clipped = text.length > MAX_GOAL_MESSAGE_CHARS ? text.slice(0, MAX_GOAL_MESSAGE_CHARS) : text;
+      return `Message ${idx + 1}:\n${clipped}`;
+    }).join('\n\n');
+    sections.push(`${w.name}: ${(w.role || 'Session')} first user messages:\n${body}`);
+  }
+  return sections.join('\n\n');
+}
+
+function candidateSessions(pid) {
+  return api.getSessions().filter(s => s.projectId === pid && s.presetId !== 'shell');
+}
+
+function hasUserMessage(id) {
+  return firstUserMessages(id, 1).length > 0;
+}
+
+function sessionDisplayName(session) {
+  return String(session?.name || '').trim() || `Session ${String(session?.id || '').slice(0, 6)}`;
+}
+
+function buildRouteLabel(session, taken) {
+  const base = sessionDisplayName(session);
+  if (!taken.has(base.toLowerCase())) return base;
+  return `${base} [${String(session.id).slice(0, 6)}]`;
+}
+
+function unpromptedSessionsMessage(sessions) {
+  const names = (sessions || []).map(sessionDisplayName).filter(Boolean);
+  const suffix = names.length ? ` Missing a first prompt: ${names.join(', ')}.` : '';
+  return `Autopilot only steers sessions after you have already told each one what to do. Give every session in this project an initial user prompt first, then start Autopilot again.${suffix}`;
+}
+
+function parseJsonObject(text) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return null;
+  const cleaned = trimmed.replace(/^```json\s*|^```\s*|\s*```$/g, '').trim();
+  try { return JSON.parse(cleaned); } catch {}
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(cleaned.slice(start, end + 1)); } catch {}
+  }
+  return null;
+}
+
 // --- Consumed state (persisted per-project: role → boolean) ---
 
 function captureIdleOutput(id, pid, proj) {
@@ -96,9 +233,9 @@ function captureIdleOutput(id, pid, proj) {
       const prev = proj.lastOutput.get(id);
       const isNew = !prev || prev.outputId !== oid;
       proj.lastOutput.set(id, { text: out, capturedAt: Date.now(), outputId: oid });
-      appendKB(pid, { from: w.role, msg: out.slice(0, 4000), outputId: oid });
-      // Clear waitingOn when the awaited role delivers new output
-      if (isNew && proj.waitingOn?.toLowerCase() === w.role.toLowerCase()) {
+      appendKB(pid, { from: w.label, msg: out.slice(0, 4000), outputId: oid });
+      // Clear waitingOn when the awaited worker delivers new output
+      if (isNew && proj.waitingOn?.toLowerCase() === w.label.toLowerCase()) {
         proj.waitingOn = null;
         proj.staleSince = null;
       }
@@ -158,51 +295,187 @@ function projectFor(sid) {
   for (const [pid, proj] of projects) {
     if (proj.workers.has(sid)) return [pid, proj];
   }
-  // Auto-discover: session may belong to a project with active autopilot
-  if (!projects.size) return [null, null];
-  const sess = api.getSessions().find(s => s.id === sid);
-  if (!sess?.projectId || !sess.roleName || !projects.has(sess.projectId)) return [null, null];
-  const pid = sess.projectId;
-  const proj = projects.get(pid);
-  const err = refreshWorkers(pid, proj);
-  if (err) {
-    api.sendToFrontend('notify', { projectId: pid, reason: `${err} — autopilot stopped` });
-    stop(pid);
-    return [null, null];
-  }
-  return proj.workers.has(sid) ? [pid, proj] : [null, null];
+  return [null, null];
 }
 
-function workerByRole(proj, role) {
+function workerByLabel(proj, label) {
   for (const [sid, w] of proj.workers) {
-    if (w.role.toLowerCase() === role.toLowerCase()) return sid;
+    if (w.label.toLowerCase() === String(label || '').toLowerCase()) return sid;
   }
   return null;
 }
 
 function isAutopilotWorkerSession(s) {
-  return s.projectId && s.roleName && s.presetId !== 'shell';
+  return s.projectId && s.presetId !== 'shell';
 }
 
-function discoverWorkers(pid) {
+async function inferWorkerRole(pid, session, label, goal, model, provider, apiKey) {
+  const messages = firstUserMessages(session.id, FIRST_USER_MESSAGES);
+  if (!messages.length) {
+    return {
+      error: unpromptedSessionsMessage([session]),
+    };
+  }
+
+  const context = messages.map((text, idx) => {
+    const clipped = text.length > MAX_GOAL_MESSAGE_CHARS ? text.slice(0, MAX_GOAL_MESSAGE_CHARS) : text;
+    return `Message ${idx + 1}:\n${clipped}`;
+  }).join('\n\n');
+
+  const prompt = [
+    'Hi,',
+    'Your task is to infer a role name and a concise summary of that role\'s responsibilities based on what the user has said so far to the agent. This is a crucial step for Autopilot to understand what this agent session is about and route work correctly.',
+    '',
+    'This is the project goal:',
+    '<project_goal>',
+    goalText(goal) || 'No project goal available.',
+    '</project_goal>',
+    '',
+    'Read the project goal and the user\'s messages carefully and understand the context of the project and the agent\'s role in it.',
+    'This role will be used by Autopilot to understand what this session is for and route work correctly.',
+    '',
+    'ROLE SCOPE RULES',
+    '- Do not write a plan. Do not explain your reasoning.',
+    '- Infer what this agent session is mainly responsible for in the project, its main focus, responsibilities, and what it should do or not do.',
+    '- The project can be anything: software, research, writing, design, operations, brainstorming, etc.',
+    '- If the role is unclear from the user\'s messages, return {"role":"unclear_role","summary":"unclear_role"} only.',
+    '',
+    'FORMAT RULES',
+    '- Return JSON only',
+    '- Use exactly this shape: {"role":"...","summary":"..."}',
+    '- "role" is short, like a job title or a one- or two-word label for the agent\'s main focus. e.g. "backend developer", "UX researcher", "marketing strategist", "data analyst", "project manager", "content writer", etc.',
+    '- "summary" must be a short paragraph, usually 2-5 sentences',
+    '- "summary" must explain what the agent is responsible for, what it should do, and what it should not do in this project, based on the user\'s messages and the project goal.',
+    '',
+    'EXAMPLES',
+    'Example 1 input:',
+    'You are the docs writer for this project.',
+    'Your job is to write the documentation the project needs, such as the README, setup guides, usage docs, and other project documents.',
+    'First, review the codebase, structure, and existing docs so your writing matches the real project. Do not invent behavior or features.',
+    'Write clear, accurate, concise, well-structured docs with a professional and consistent tone and style.',
+    'You do not write code unless documentation examples are needed.',
+    '',
+    'Example 1 output:',
+    '{"role":"Documentation writer","summary":"This agent is the Documentation Writer. Its role is to create the project documentation needed to help users and contributors understand, use, and work with the project clearly and correctly. It should review the codebase, structure, and existing docs before writing so the documentation matches the real project state, and it should produce clear, accurate, concise, and well-structured documents in the requested tone and style. It should not invent features or behavior, and it should not write code except when documentation examples are necessary."}',
+    '',
+    'Example 2 input:',
+    'You are the Product Manager for this project.',
+    'Your job is to understand the product deeply: what it does, why it exists, who it serves, and what the best user experience should be.',
+    'You focus on product quality above all else. Technical limitations, implementation preferences, and engineering convenience are secondary.',
+    'You never write code.',
+    'First, review the existing project if there is one. Read the codebase, documentation, and README to understand what the product is, why it was built, and what good execution should look like.',
+    '',
+    'Example 2 output:',
+    '{"role":"Product manager","summary":"This agent is the Product Manager. Its role is to understand the product end to end, define what best-in-class user experience looks like, and guide the team toward polished, high-quality outcomes with strong UI/UX standards. It should review the existing project to understand the product, its purpose, and its users, and it should evaluate decisions through the lens of user value, clarity, trust, and quality. It should not write code or optimize for engineering convenience over product quality."}',
+    '',
+    'SESSION',
+    `Label: ${label}`,
+    `Name: ${sessionDisplayName(session)}`,
+    '',
+    'SOURCE CONTEXT',
+    context,
+  ].join('\n');
+
+  const res = await (await ai()).complete(model, {
+    systemPrompt: 'You infer concise neutral worker roles for workflow routing. Output JSON only.',
+    messages: [{ role: 'user', content: prompt, timestamp: Date.now() }],
+  }, { apiKey, reasoning: 'minimal' });
+
+  addTokens(pid, res.usage);
+  const raw = res.content?.find(b => b.type === 'text')?.text?.trim() || '';
+  const parsed = parseJsonObject(raw);
+  const role = String(parsed?.role || '').replace(/\s+/g, ' ').trim();
+  const summary = String(parsed?.summary || '').replace(/\s+/g, ' ').trim();
+  const unclear = role.toLowerCase() === 'unclear_role' || summary.toLowerCase() === 'unclear_role';
+  if (!parsed || unclear || !role || !summary) {
+    return {
+      unclear: true,
+      usage: res.usage,
+      notifyReason: `Autopilot could not infer a clear role for session "${label}". Add one or more user messages that make its mission clear, then start Autopilot again.`,
+      raw,
+      context,
+    };
+  }
+
+  return {
+    role,
+    summary,
+    usage: res.usage,
+    raw,
+    context,
+  };
+}
+
+function bootstrapWorkers(pid) {
+  const sessions = candidateSessions(pid);
+  if (!sessions.length) return { error: 'No project sessions found for Autopilot' };
+
+  const empty = sessions.filter(s => !hasUserMessage(s.id));
+  if (empty.length) {
+    return {
+      error: unpromptedSessionsMessage(empty),
+    };
+  }
+
   const workers = new Map();
   const status = new Map();
-  for (const s of api.getSessions().filter(s => s.projectId === pid && isAutopilotWorkerSession(s))) {
-    workers.set(s.id, { role: s.roleName, name: s.name, presetId: s.presetId });
-    // Sessions start idle. Status is tracked by notifyStatus() on every
-    // working/idle transition. If s.working is undefined, no transition was
-    // ever recorded — the session has been idle since creation.
-    status.set(s.id, s.working === true);
+  const takenLabels = new Set();
+
+  for (const session of sessions) {
+    const label = buildRouteLabel(session, takenLabels);
+    takenLabels.add(label.toLowerCase());
+    workers.set(session.id, {
+      name: sessionDisplayName(session),
+      label,
+      role: null,
+      summary: null,
+      presetId: session.presetId,
+    });
+    status.set(session.id, session.working === true);
   }
   return { workers, status };
 }
 
+async function inferRolesForWorkers(pid, proj, model, provider, apiKey) {
+  const roleUsage = { input: 0, output: 0 };
+  for (const [sid, worker] of proj.workers) {
+    const session = api.getSessions().find(s => s.id === sid);
+    if (!session) continue;
+    const inferred = await inferWorkerRole(pid, session, worker.label, proj.goal, model, provider, apiKey);
+    roleUsage.input += inferred.usage?.input || 0;
+    roleUsage.output += inferred.usage?.output || 0;
+    if (inferred.error) return { error: inferred.error, usage: roleUsage };
+    if (inferred.unclear) return { unclear: true, notifyReason: inferred.notifyReason, usage: roleUsage };
+    worker.role = inferred.role;
+    worker.summary = inferred.summary;
+    appendKB(pid, { type: 'worker-role', worker: worker.label, role: inferred.role, summary: inferred.summary });
+    api.appendPillLog(pillId(pid), `Role: ${worker.label} → ${inferred.role}`);
+  }
+
+  debugLog(pid, 'roles', [
+    `# Worker Roles — ${new Date().toISOString()}`,
+    `Provider: ${provider}`,
+    `Project goal: ${goalText(proj.goal) || '(none)'}`,
+    `Tokens: in=${roleUsage.input} out=${roleUsage.output} total=${roleUsage.input + roleUsage.output}`,
+    '',
+    ...[...proj.workers.values()].map(w => `- ${w.label}: ${w.role} — ${w.summary}`),
+  ].join('\n'));
+
+  return { usage: roleUsage };
+}
+
 // Returns null on success, or an error string (caller must stop autopilot).
-function refreshWorkers(pid, proj) {
+async function refreshWorkers(pid, proj, model, provider, apiKey) {
+  const liveSessions = candidateSessions(pid);
   const live = new Map();
   const liveStatus = new Map();
-  for (const s of api.getSessions().filter(s => s.projectId === pid && isAutopilotWorkerSession(s))) {
-    live.set(s.id, { role: s.roleName, name: s.name, presetId: s.presetId });
+  const empty = liveSessions.filter(s => !hasUserMessage(s.id));
+  if (empty.length) {
+    return unpromptedSessionsMessage(empty);
+  }
+
+  for (const s of liveSessions) {
+    live.set(s.id, s);
     liveStatus.set(s.id, s.working === true);
   }
   // Remove dead sessions
@@ -215,20 +488,37 @@ function refreshWorkers(pid, proj) {
     }
   }
   // Add new sessions
-  for (const [sid, w] of live) {
+  const takenLabels = new Set([...proj.workers.values()].map(w => w.label.toLowerCase()));
+  for (const [sid, session] of live) {
     if (!proj.workers.has(sid)) {
-      const roleKey = w.role.toLowerCase();
-      if ([...proj.workers.values()].some(x => x.role.toLowerCase() === roleKey)) {
-        return `Duplicate role "${w.role}"`;
-      }
-      proj.workers.set(sid, w);
+      const label = buildRouteLabel(session, takenLabels);
+      takenLabels.add(label.toLowerCase());
+      const inferred = await inferWorkerRole(pid, session, label, proj.goal, model, provider, apiKey);
+      if (inferred.error) return inferred.error;
+      if (inferred.unclear) return inferred.notifyReason;
+      proj.workers.set(sid, {
+        name: sessionDisplayName(session),
+        label,
+        role: inferred.role,
+        summary: inferred.summary,
+        presetId: session.presetId,
+      });
       proj.status.set(sid, liveStatus.get(sid));
+      appendKB(pid, { type: 'worker-role', worker: label, role: inferred.role, summary: inferred.summary, added: true });
       api.setAutoApproveMenu(sid, true);
       if (!liveStatus.get(sid)) {
         const text = latestAgentOutput(sid);
         if (text) proj.lastOutput.set(sid, { text, capturedAt: Date.now(), outputId: outputId(text) });
       }
+      const pillId = `autopilot-${pid}`;
+      api.appendPillLog(pillId, `Role: ${label} → ${inferred.role}`);
     }
+  }
+  for (const [sid, session] of live) {
+    const w = proj.workers.get(sid);
+    if (!w) continue;
+    w.name = sessionDisplayName(session);
+    proj.status.set(sid, liveStatus.get(sid));
   }
   return null;
 }
@@ -257,6 +547,72 @@ function filterModels(all) {
   return filtered
     .sort((a, b) => a.cost.input - b.cost.input)
     .map(m => ({ value: m.id, label: `${m.name.replace(/\s*\(latest\)$/, '')}  ($${m.cost.input}/M)` }));
+}
+
+function goalText(goal) {
+  return String(goal?.text || '').trim();
+}
+
+async function buildGoal(pid, proj, model, provider, apiKey) {
+  const sourceContext = goalSourceContext(proj);
+  if (!sourceContext) return { error: 'No early user messages found to build project goal' };
+
+  const prompt = [
+    'Hi, You are writing a concise project goal based on early user-side messages.',
+    'This goal will be used to guide the project and keep it focused on the main objectives.',
+    '',
+    'PROJECT GOAL SCOPE RULES',
+    '- Use only the early user-side messages below.',
+    '- Do not write a plan. Do not write steps. Do not explain your reasoning.',
+    '- Write one short paragraph that captures the project mission/task/goal.',
+    '- The project can be anything: a software project, a research project, a writing project, etc. Do not assume it\'s coding work.',
+    '- If the goal is unclear, return "unclear_goal" only.',
+    '',
+    'FORMAT RULES',
+    '- One paragraph only',
+    '- Plain text only',
+    '- Keep it concise and easy to scan later',
+    '- Generic wording: do not assume this is coding work',
+    '',
+    'SOURCE CONTEXT',
+    sourceContext,
+  ].join('\n');
+
+  const res = await (await ai()).complete(model, {
+    systemPrompt: 'You write concise, neutral project-goal summaries for workflow routing.',
+    messages: [{ role: 'user', content: prompt, timestamp: Date.now() }],
+  }, { apiKey, reasoning: 'minimal' });
+
+  addTokens(pid, res.usage);
+  const text = res.content?.find(b => b.type === 'text')?.text?.trim() || '';
+  if (!text) return { error: 'Model returned an empty project goal' };
+  if (isUnclearGoal(text)) {
+    return {
+      unclear: true,
+      usage: res.usage,
+      notifyReason: `Autopilot could not infer a clear project goal. Add a message starting with \`${GOAL_PREFIX}\` in any existing project worker session, then start Autopilot again.`,
+    };
+  }
+
+  const goal = {
+    text: text.replace(/\s+/g, ' ').trim(),
+    builtAt: new Date().toISOString(),
+    source: 'model',
+  };
+  saveGoal(pid, goal);
+  appendKB(pid, { type: 'goal', goal: goal.text, source: goal.source, usage: usageTotals(res.usage) });
+  debugLog(pid, 'goal', [
+    `# Project Goal — ${goal.builtAt}`,
+    `Provider: ${provider}`,
+    `Tokens: in=${res.usage?.input || 0} out=${res.usage?.output || 0} total=${(res.usage?.input || 0) + (res.usage?.output || 0)}`,
+    '',
+    '## Source Context',
+    sourceContext,
+    '',
+    '## Goal',
+    goal.text,
+  ].join('\n'));
+  return { goal, usage: res.usage };
 }
 
 async function loadModelsForProvider(provider) {
@@ -289,8 +645,8 @@ function buildTools(Type) {
       name: 'route',
       description: 'Forward one agent\'s output to another idle agent. The system copies the output verbatim — you only choose who sends and who receives.',
       parameters: Type.Object({
-        from: Type.String({ description: 'Source agent role name (prefer [LATEST] agent)' }),
-        to: Type.String({ description: 'Target agent role name (must be IDLE)' }),
+        from: Type.String({ description: 'Source agent label (prefer [LATEST] agent)' }),
+        to: Type.String({ description: 'Target agent label (must be IDLE)' }),
       }),
     },
     {
@@ -312,13 +668,10 @@ function buildPrompt(proj, pid) {
   const p = pList.find(x => x.id === pid);
   const projectName = p ? `${p.name}${p.path ? ` (${p.path})` : ''}` : pid;
 
-  const roles = api.getRoles();
   const agentProfiles = [];
   for (const [sid, w] of proj.workers) {
     const busy = proj.status.get(sid);
-    const role = roles.find(r => r.name === w.role);
-    const desc = role?.instructions || '(no role description)';
-    agentProfiles.push(`${w.role} [${busy ? 'WORKING' : 'IDLE'}]\n  Role: ${desc}`);
+    agentProfiles.push(`${w.label} [${busy ? 'WORKING' : 'IDLE'}]\n  Inferred role: ${w.role}\n  Summary: ${w.summary}`);
   }
 
   let prompt = PROMPT_TEMPLATE
@@ -337,7 +690,7 @@ function buildStateContext(proj, pid) {
     return `${Math.round(sec / 60)}m ago`;
   };
 
-  const lines = ['CURRENT STATE'];
+  const lines = ['PROJECT GOAL', `  ${goalText(proj.goal) || 'Goal not set'}`, '', 'CURRENT STATE'];
 
   // Per-worker state
   const lastActionAt = proj.lastAction?.at || 0;
@@ -347,7 +700,7 @@ function buildStateContext(proj, pid) {
     const capturedAt = stored?.capturedAt || 0;
     const isNew = capturedAt > lastActionAt;
     const status = proj.status.get(sid) ? 'WORKING' : 'IDLE';
-    let line = `  ${w.role}: ${status}`;
+    let line = `  ${w.label}: ${status} | role: ${w.role}`;
     if (oid) line += ` | output #${oid} captured ${fmtAgo(capturedAt)}${isNew ? ' (NEW)' : ''}`;
     else line += ' | no output';
     lines.push(line);
@@ -400,34 +753,23 @@ function buildStateContext(proj, pid) {
 
 async function consult(pid, proj) {
   if (proj.pending || proj.paused || !projects.has(pid)) return;
-  const pillId = `autopilot-${pid}`;
-  const refreshErr = refreshWorkers(pid, proj);
-  if (refreshErr) {
-    api.sendToFrontend('notify', { projectId: pid, reason: `${refreshErr} — autopilot stopped` });
-    stop(pid);
-    return;
-  }
-  // Re-check all-idle after refresh — new workers may be busy
-  if (![...proj.workers.keys()].every(sid => !proj.status.get(sid))) return;
-
+  const runPillId = pillId(pid);
+  const provider = api.getSetting('provider') || 'anthropic';
+  const modelId = api.getSetting('model') || 'claude-opus-4-6';
   let m;
   try { m = await ai(); } catch (e) {
     api.sendToFrontend('notify', { projectId: pid, reason: `Failed to load AI library: ${e.message}` });
     stop(pid);
     return;
   }
-
-  const provider = api.getSetting('provider') || 'anthropic';
-  const modelId = api.getSetting('model') || 'claude-opus-4-6';
   const apiKey = api.getSetting('apiKey') || m.getEnvApiKey(provider) || '';
-
   if (!apiKey) {
     proj.paused = true;
     proj.pauseReason = 'config';
     api.sendToFrontend('error', { msg: `No API key for ${provider}. Set in Autopilot settings or via env var.` });
     api.sendToFrontend('paused', { projectId: pid, question: 'API key missing — configure in plugin settings' });
-    api.updateSessionPill(pillId, { working: false, statusText: 'Paused — no API key' });
-    api.appendPillLog(pillId, 'Paused: API key missing');
+    api.updateSessionPill(runPillId, { working: false, statusText: 'Paused — no API key' });
+    api.appendPillLog(runPillId, 'Paused: API key missing');
     return;
   }
 
@@ -437,6 +779,15 @@ async function consult(pid, proj) {
     stop(pid);
     return;
   }
+
+  const refreshErr = await refreshWorkers(pid, proj, model, provider, apiKey);
+  if (refreshErr) {
+    api.sendToFrontend('notify', { projectId: pid, reason: `${refreshErr} — autopilot stopped` });
+    stop(pid);
+    return;
+  }
+  // Re-check all-idle after refresh — new workers may be busy
+  if (![...proj.workers.keys()].every(sid => !proj.status.get(sid))) return;
 
   // Build structured state context
   const stateContext = buildStateContext(proj, pid);
@@ -453,7 +804,7 @@ async function consult(pid, proj) {
       text = latestAgentOutput(sid);
       if (text) { capturedAt = capturedAt || Date.now(); oid = outputId(text); }
     }
-    entries.push({ sid, role: w.role, text, capturedAt, outputId: oid });
+    entries.push({ sid, label: w.label, role: w.role, text, capturedAt, outputId: oid });
   }
   entries.sort((a, b) => a.capturedAt - b.capturedAt);
 
@@ -461,7 +812,7 @@ async function consult(pid, proj) {
     const isNew = e.capturedAt > lastActionAt;
     const tag = isNew ? ' — NEW' : '';
     const idTag = e.outputId ? ` (#${e.outputId})` : '';
-    return `[${e.role}${tag}${idTag}]:\n${e.text ? e.text.slice(0, 2000) : '(no output captured)'}`;
+    return `[${e.label}${tag}${idTag} | ${e.role}]:\n${e.text ? e.text.slice(0, 2000) : '(no output captured)'}`;
   });
 
   const sections = [stateContext, ''];
@@ -494,8 +845,8 @@ async function consult(pid, proj) {
     ctx.messages[0].content,
   ].join('\n'));
 
-  api.updateSessionPill(pillId, { working: true, statusText: 'Consulting router...' });
-  api.appendPillLog(pillId, `Consulting ${modelId}`);
+  api.updateSessionPill(runPillId, { working: true, statusText: 'Consulting router...' });
+  api.appendPillLog(runPillId, `Consulting ${modelId}`);
   // api.log(`[consult] model=${modelId} workers=${[...proj.workers.values()].map(w => w.role).join(',')}`);
   // api.log(`[consult] hasOutput=${[...proj.workers].filter(([sid]) => proj.lastOutput.has(sid)).map(([,w]) => w.role).join(',') || 'none'}`);
 
@@ -530,7 +881,7 @@ async function consult(pid, proj) {
         continue;
       }
 
-      const error = executeAction(pid, proj, tc.name, tc.arguments, pillId);
+      const error = executeAction(pid, proj, tc.name, tc.arguments, runPillId);
       if (error === null) { proj.pending = false; return; }
 
       // api.log(`[consult] action error — hinting: ${error}`);
@@ -559,12 +910,13 @@ function triggerConsult(pid, proj) {
 // --- Action execution (returns error string or null on success) ---
 
 function executeAction(pid, proj, action, args, pillId) {
-  const roles = [...proj.workers.values()].map(w => w.role);
+  const labels = [...proj.workers.values()].map(w => w.label);
   switch (action) {
     case 'route': {
-      const src = workerByRole(proj, args.from);
-      const dst = workerByRole(proj, args.to);
-      if (!dst) return `No agent with role "${args.to}". Available roles: ${roles.join(', ')}`;
+      const src = workerByLabel(proj, args.from);
+      const dst = workerByLabel(proj, args.to);
+      if (!src) return `No agent with label "${args.from}". Available agents: ${labels.join(', ')}`;
+      if (!dst) return `No agent with label "${args.to}". Available agents: ${labels.join(', ')}`;
       if (src === dst) return 'Cannot route agent to itself';
       if (proj.status.get(dst)) return `"${args.to}" is currently working — pick an idle agent`;
       const stored = src ? proj.lastOutput.get(src) : null;
@@ -585,11 +937,12 @@ function executeAction(pid, proj, action, args, pillId) {
         }
       }
 
-      const dstRole = proj.workers.get(dst)?.role || args.to;
+      const dstWorker = proj.workers.get(dst);
       const header = [
         `[Autopilot route${oid ? ` | output #${oid}` : ''}]`,
-        `[Team: ${roles.join(', ')}]`,
-        `[You are: ${dstRole}]`,
+        `[Team: ${labels.join(', ')}]`,
+        `[Target session: ${dstWorker?.label || args.to}]`,
+        `[Target inferred role: ${dstWorker?.role || 'unknown'}]`,
         `[From: ${args.from}]`,
         '[Do not spawn internal agents.]',
       ].join('\n');
@@ -633,26 +986,26 @@ async function start(pid) {
   if (!enabled()) return { error: 'Autopilot disabled' };
 
   const provider = api.getSetting('provider') || 'anthropic';
-  const apiKey = api.getSetting('apiKey') || (await ai()).getEnvApiKey(provider) || '';
+  const m = await ai();
+  const apiKey = api.getSetting('apiKey') || m.getEnvApiKey(provider) || '';
   if (!apiKey) return { error: 'Set the API key in Autopilot settings (Plugins panel)' };
-
-  const { workers, status } = discoverWorkers(pid);
-  if (workers.size < 1) return { error: 'No agents with roles in this project' };
-
-  const roles = new Set();
-  for (const [, w] of workers) {
-    const key = w.role.toLowerCase();
-    if (roles.has(key)) return { error: `Duplicate role "${w.role}"` };
-    roles.add(key);
-  }
+  const modelId = api.getSetting('model') || 'claude-opus-4-6';
+  let model;
+  try { model = m.getModel(provider, modelId); } catch { return { error: `Model "${modelId}" not found` }; }
 
   resetProjectState(pid);
   resetDebugLogs(pid);
+
+  const seeded = bootstrapWorkers(pid);
+  if (seeded.error) return { error: seeded.error };
+  const { workers, status } = seeded;
+  if (workers.size < 1) return { error: 'No project sessions found for Autopilot' };
 
   const proj = {
     workers,
     status,
     lastOutput: new Map(),
+    goal: null,
     paused: false,
     pauseReason: null,
     pending: false,
@@ -661,6 +1014,10 @@ async function start(pid) {
     staleSince: null,    // timestamp when we started waiting without progress
   };
   projects.set(pid, proj);
+
+  const runPillId = pillId(pid);
+  api.addSessionPill({ id: runPillId, title: 'Autopilot', projectId: pid });
+  api.appendPillLog(runPillId, `Started with ${workers.size} workers: ${[...workers.values()].map(w => w.label).join(', ')}`);
 
   // Flag all workers for core menu auto-approve
   for (const [sid] of workers) api.setAutoApproveMenu(sid, true);
@@ -674,9 +1031,75 @@ async function start(pid) {
 
   // api.log(`Started: ${pid}, ${workers.size} workers`);
   api.sendToFrontend('started', { projectId: pid });
-  const pillId = `autopilot-${pid}`;
-  api.addSessionPill({ id: pillId, title: 'Autopilot', projectId: pid });
-  api.appendPillLog(pillId, `Started with ${workers.size} workers: ${[...workers.values()].map(w => w.role).join(', ')}`);
+
+  const explicit = findExplicitGoal(proj);
+  if (explicit.error) {
+    api.updateSessionPill(runPillId, { working: false, statusText: 'Goal conflict' });
+    api.appendPillLog(runPillId, `Notify: ${explicit.error}`);
+    api.sendToFrontend('notify', { projectId: pid, reason: explicit.error });
+    stop(pid, true, 'Stopped');
+    return { error: explicit.error };
+  }
+
+  if (explicit.goal) {
+    proj.goal = explicit.goal;
+    saveGoal(pid, explicit.goal);
+    appendKB(pid, { type: 'goal', goal: explicit.goal.text, source: explicit.goal.source });
+    api.updateSessionPill(runPillId, { working: false, statusText: 'Project goal ready' });
+    api.appendPillLog(runPillId, `Goal: ${explicit.goal.text}`);
+    api.appendPillLog(runPillId, formatTokenLog('Goal', null, 'explicit message'));
+  } else {
+    const savedGoal = loadGoal(pid);
+    if (savedGoal) {
+      proj.goal = savedGoal;
+      appendKB(pid, { type: 'goal', goal: savedGoal.text, source: savedGoal.source || 'saved', loaded: true });
+      api.updateSessionPill(runPillId, { working: false, statusText: 'Project goal ready' });
+      api.appendPillLog(runPillId, `Goal: ${savedGoal.text}`);
+    } else {
+      proj.pending = true;
+      api.updateSessionPill(runPillId, { working: true, statusText: 'Building project goal...' });
+      api.appendPillLog(runPillId, 'Building project goal');
+      const built = await buildGoal(pid, proj, model, provider, apiKey);
+      proj.pending = false;
+      if (built.error) {
+        api.sendToFrontend('notify', { projectId: pid, reason: `${built.error} — autopilot stopped` });
+        stop(pid, true, 'Stopped');
+        return { error: built.error };
+      }
+      if (built.unclear) {
+        api.updateSessionPill(runPillId, { working: false, statusText: 'Goal required' });
+        api.appendPillLog(runPillId, 'Goal: unclear_goal');
+        api.appendPillLog(runPillId, formatTokenLog('Goal', built.usage, 'goal build'));
+        api.appendPillLog(runPillId, `Notify: ${built.notifyReason}`);
+        api.sendToFrontend('notify', { projectId: pid, reason: built.notifyReason });
+        stop(pid, true, 'Goal required');
+        return { error: 'unclear_goal' };
+      }
+      proj.goal = built.goal;
+      api.updateSessionPill(runPillId, { working: false, statusText: 'Project goal ready' });
+      api.appendPillLog(runPillId, `Goal: ${built.goal.text}`);
+      api.appendPillLog(runPillId, formatTokenLog('Goal', built.usage, 'goal build'));
+    }
+  }
+
+  api.updateSessionPill(runPillId, { working: true, statusText: 'Inferring agent roles...' });
+  api.appendPillLog(runPillId, 'Inferring agent roles');
+  const roleResult = await inferRolesForWorkers(pid, proj, model, provider, apiKey);
+  if (roleResult.error) {
+    api.sendToFrontend('notify', { projectId: pid, reason: `${roleResult.error} — autopilot stopped` });
+    stop(pid, true, 'Stopped');
+    return { error: roleResult.error };
+  }
+  if (roleResult.unclear) {
+    api.updateSessionPill(runPillId, { working: false, statusText: 'Role required' });
+    api.appendPillLog(runPillId, `Notify: ${roleResult.notifyReason}`);
+    api.appendPillLog(runPillId, formatTokenLog('Role', roleResult.usage, 'role inference'));
+    api.sendToFrontend('notify', { projectId: pid, reason: roleResult.notifyReason });
+    stop(pid, true, 'Role required');
+    return { error: 'unclear_role' };
+  }
+  api.appendPillLog(runPillId, formatTokenLog('Role', roleResult.usage, 'role inference'));
+  api.updateSessionPill(runPillId, { working: false, statusText: 'Ready' });
 
   // Only consult if all workers are already idle
   const allIdle = [...workers.keys()].every(sid => !status.get(sid));
@@ -685,7 +1108,7 @@ async function start(pid) {
   return { ok: true };
 }
 
-function stop(pid, keepPill) {
+function stop(pid, keepPill, finalLog) {
   const proj = projects.get(pid);
   if (!proj) return;
   for (const [sid] of proj.workers) clearIdleCaptureTimer(sid);
@@ -695,7 +1118,7 @@ function stop(pid, keepPill) {
   api.sendToFrontend('stopped', { projectId: pid });
   const pillId = `autopilot-${pid}`;
   if (keepPill) {
-    api.appendPillLog(pillId, 'Completed');
+    api.appendPillLog(pillId, finalLog || 'Completed');
   } else {
     api.appendPillLog(pillId, 'Stopped');
     api.removeSessionPill(pillId);
@@ -742,7 +1165,7 @@ module.exports.init = function (pluginApi) {
     const [pid, proj] = projectFor(id);
     if (!pid) return;
     const w = proj.workers.get(id);
-    const role = w?.role || id.slice(0, 8);
+    const role = w?.label || id.slice(0, 8);
 
     if (working) {
       menuPending.delete(id);
