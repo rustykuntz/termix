@@ -24,15 +24,69 @@ document.getElementById('settings-nav').addEventListener('click', (e) => {
   if (btn) switchCategory(btn.dataset.cat);
 });
 
+function captureSettingsFocus() {
+  const active = document.activeElement;
+  if (!active || !(active instanceof HTMLElement)) return null;
+  if (!active.closest('#panel-settings')) return null;
+
+  const snapshot = {
+    id: active.id || null,
+    selector: null,
+    cardIdx: null,
+    selectionStart: null,
+    selectionEnd: null,
+  };
+
+  const card = active.closest('.agent-card');
+  if (card) {
+    snapshot.cardIdx = card.dataset.idx || null;
+    for (const cls of ['agent-name', 'agent-command', 'agent-enabled', 'agent-is-agent', 'agent-can-resume', 'agent-resume-cmd']) {
+      if (active.classList.contains(cls)) {
+        snapshot.selector = `.${cls}`;
+        break;
+      }
+    }
+  }
+
+  if (typeof active.selectionStart === 'number' && typeof active.selectionEnd === 'number') {
+    snapshot.selectionStart = active.selectionStart;
+    snapshot.selectionEnd = active.selectionEnd;
+  }
+
+  return snapshot;
+}
+
+function restoreSettingsFocus(snapshot) {
+  if (!snapshot) return;
+
+  let target = null;
+  if (snapshot.id) target = document.getElementById(snapshot.id);
+  if (!target && snapshot.cardIdx != null && snapshot.selector) {
+    target = document.querySelector(`.agent-card[data-idx="${snapshot.cardIdx}"] ${snapshot.selector}`);
+  }
+  if (!(target instanceof HTMLElement)) return;
+
+  target.focus({ preventScroll: true });
+  if (
+    typeof snapshot.selectionStart === 'number' &&
+    typeof snapshot.selectionEnd === 'number' &&
+    typeof target.setSelectionRange === 'function'
+  ) {
+    target.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+  }
+}
+
 // ── Render all ──
 
 export function renderSettings() {
+  const focusSnapshot = captureSettingsFocus();
   document.getElementById('cfg-default-path').value = state.cfg.defaultPath || '';
   document.getElementById('cfg-confirm-close').checked = state.cfg.confirmClose !== false;
   renderAgentList();
   renderThemeSection();
   renderNotifications();
   updateVersionFooter();
+  restoreSettingsFocus(focusSnapshot);
 }
 
 export function updateVersionFooter() {
@@ -105,6 +159,22 @@ function openIconPicker(triggerEl, cardIdx) {
 function telemetryPreset(cmd) {
   const bin = binName(cmd.command);
   return (state.presets || []).find(p => binName(p.command) === bin);
+}
+
+function presetForCommand(existing, command) {
+  const presets = state.presets || [];
+  if (existing?.presetId) {
+    const byId = presets.find(p => p.presetId === existing.presetId);
+    if (byId) return byId;
+  }
+  const bin = binName(command || existing?.command || '');
+  return presets.find(p => binName(p.command) === bin) || null;
+}
+
+function telemetryEnabledForCommand(existing, command) {
+  const preset = presetForCommand(existing, command);
+  if (preset?.telemetryEnabled === true) return true;
+  return !!existing?.telemetryEnabled;
 }
 
 function integrationSection(c) {
@@ -217,7 +287,7 @@ function openPresetMenu(anchorEl) {
         enabled: true, defaultPath: '', isAgent: p.isAgent, canResume: p.canResume,
         resumeCommand: p.resumeCommand, sessionIdPattern: p.sessionIdPattern,
         outputMarker: p.outputMarker || null,
-        telemetryEnabled: false,
+        telemetryEnabled: telemetryEnabledForCommand({ presetId: p.presetId, command: p.command }, p.command),
         telemetryStatus: null,
         bridge: p.bridge,
       });
@@ -453,7 +523,7 @@ function saveConfig() {
       resumeCommand: card.querySelector('.agent-resume-cmd')?.value.trim() || null,
       sessionIdPattern: existing.sessionIdPattern || null,
       outputMarker: existing.outputMarker || null,
-      telemetryEnabled: existing.telemetryEnabled || false,
+      telemetryEnabled: telemetryEnabledForCommand(existing, command),
       telemetryStatus: existing.telemetryStatus || null,
       bridge: existing.bridge,
     };

@@ -139,64 +139,69 @@ function detectTelemetryConfig(c) {
   const home = os.homedir();
   const port = '4000';
   let changed = false;
-  let repairedAny = false;
-  for (const cmd of c.commands || []) {
-    const bin = binName(cmd.command);
-    const preset = presets.find(p => binName(p.command) === bin);
-    if (!preset) continue;
-    let detected = false;
-    let reason = '';
-    if (preset.presetId === 'claude-code') {
-      try {
-        const s = JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8'));
-        const hooks = s.hooks || {};
-        detected = hasExistingHook(hooks.UserPromptSubmit, 'claude-hook.js', 'start')
-                && hasExistingHook(hooks.Stop, 'claude-hook.js', 'stop')
-                && hasExistingHook(hooks.StopFailure, 'claude-hook.js', 'stop')
-                && hasExistingHook(hooks.PreToolUse, 'claude-hook.js', 'menu')
-                && hooks.Notification?.some(h => h.matcher === 'idle_prompt' && hasExistingHook([h], 'claude-hook.js', 'idle'));
+  const attemptedRepairs = new Set();
+
+  for (let pass = 0; pass < 2; pass++) {
+    let repairedAny = false;
+    for (const cmd of c.commands || []) {
+      const bin = binName(cmd.command);
+      const preset = presets.find(p => binName(p.command) === bin);
+      if (!preset) continue;
+      let detected = false;
+      let reason = '';
+      if (preset.presetId === 'claude-code') {
+        try {
+          const s = JSON.parse(readFileSync(join(home, '.claude', 'settings.json'), 'utf8'));
+          const hooks = s.hooks || {};
+          detected = hasExistingHook(hooks.UserPromptSubmit, 'claude-hook.js', 'start')
+                  && hasExistingHook(hooks.Stop, 'claude-hook.js', 'stop')
+                  && hasExistingHook(hooks.StopFailure, 'claude-hook.js', 'stop')
+                  && hasExistingHook(hooks.PreToolUse, 'claude-hook.js', 'menu')
+                  && hooks.Notification?.some(h => h.matcher === 'idle_prompt' && hasExistingHook([h], 'claude-hook.js', 'idle'));
+          if (!detected) reason = 'Needs re-patch';
+        } catch {}
+      } else if (preset.presetId === 'codex') {
+        try {
+          const content = readFileSync(join(home, '.codex', 'config.toml'), 'utf8');
+          detected = codexConfigLooksHealthy(content, port);
+          if (!detected) reason = 'Needs re-patch';
+        } catch {}
+      } else if (preset.presetId === 'gemini-cli') {
+        try {
+          const s = JSON.parse(readFileSync(join(home, '.gemini', 'settings.json'), 'utf8'));
+          const hooks = s.hooks || {};
+          detected = hasExistingHook(hooks.BeforeAgent, 'gemini-hook.js', 'start')
+                  && hasExistingHook(hooks.AfterAgent, 'gemini-hook.js', 'stop')
+                  && hasExistingHook(hooks.SessionEnd, 'gemini-hook.js', 'stop')
+                  && hasExistingHook(hooks.BeforeTool, 'gemini-hook.js', 'menu');
+          if (!detected) reason = 'Needs re-patch';
+        } catch {}
+      } else if (preset.presetId === 'opencode') {
+        detected = existsSync(join(opencodePluginDir, 'clideck-bridge.js')) || existsSync(join(opencodePluginDir, 'termix-bridge.js'));
         if (!detected) reason = 'Needs re-patch';
-      } catch {}
-    } else if (preset.presetId === 'codex') {
-      try {
-        const content = readFileSync(join(home, '.codex', 'config.toml'), 'utf8');
-        detected = codexConfigLooksHealthy(content, port);
-        if (!detected) reason = 'Needs re-patch';
-      } catch {}
-    } else if (preset.presetId === 'gemini-cli') {
-      try {
-        const s = JSON.parse(readFileSync(join(home, '.gemini', 'settings.json'), 'utf8'));
-        const hooks = s.hooks || {};
-        detected = hasExistingHook(hooks.BeforeAgent, 'gemini-hook.js', 'start')
-                && hasExistingHook(hooks.AfterAgent, 'gemini-hook.js', 'stop')
-                && hasExistingHook(hooks.SessionEnd, 'gemini-hook.js', 'stop')
-                && hasExistingHook(hooks.BeforeTool, 'gemini-hook.js', 'menu');
-        if (!detected) reason = 'Needs re-patch';
-      } catch {}
-    } else if (preset.presetId === 'opencode') {
-      detected = existsSync(join(opencodePluginDir, 'clideck-bridge.js')) || existsSync(join(opencodePluginDir, 'termix-bridge.js'));
-      if (!detected) reason = 'Needs re-patch';
-    } else { continue; }
-    if (preset.available && preset.minVersion && !preset.versionOk) {
-      detected = false;
-      reason = `Update required (${preset.minVersion}+)`;
-    } else if (!detected && cmd.telemetryEnabled && preset.telemetryAutoSetup && preset.available && preset.versionOk) {
-      const repaired = applyTelemetryConfig(preset);
-      if (repaired.success) {
-        repairedAny = true;
-        continue;
+      } else { continue; }
+      if (preset.available && preset.minVersion && !preset.versionOk) {
+        detected = false;
+        reason = `Update required (${preset.minVersion}+)`;
+      } else if (!detected && cmd.telemetryEnabled && preset.telemetryAutoSetup && preset.available && preset.versionOk && !attemptedRepairs.has(preset.presetId)) {
+        attemptedRepairs.add(preset.presetId);
+        const repaired = applyTelemetryConfig(preset);
+        if (repaired.success) {
+          repairedAny = true;
+          continue;
+        }
       }
+      const nextEnabled = detected || (!!cmd.telemetryEnabled && !reason.startsWith('Update required'));
+      const nextStatus = detected ? { ok: true } : { ok: false, error: reason || 'Needs setup' };
+      if (cmd.telemetryEnabled !== nextEnabled || JSON.stringify(cmd.telemetryStatus || null) !== JSON.stringify(nextStatus)) {
+        cmd.telemetryEnabled = nextEnabled;
+        cmd.telemetryStatus = nextStatus;
+        changed = true;
+      }
+      preset.health = detected ? { ok: true } : { ok: false, reason: reason || 'Needs setup' };
     }
-    const nextEnabled = detected || (!!cmd.telemetryEnabled && !reason.startsWith('Update required'));
-    const nextStatus = detected ? { ok: true } : { ok: false, error: reason || 'Needs setup' };
-    if (cmd.telemetryEnabled !== nextEnabled || JSON.stringify(cmd.telemetryStatus || null) !== JSON.stringify(nextStatus)) {
-      cmd.telemetryEnabled = nextEnabled;
-      cmd.telemetryStatus = nextStatus;
-      changed = true;
-    }
-    preset.health = detected ? { ok: true } : { ok: false, reason: reason || 'Needs setup' };
+    if (!repairedAny) break;
   }
-  if (repairedAny) return detectTelemetryConfig(c) || true;
   if (changed) console.log('Config: synced telemetry/plugin state from detected config files');
   return changed;
 }
@@ -251,10 +256,10 @@ function onConnection(ws) {
           if (choices && sess.presetId === 'codex') {
             const last = require('./telemetry-receiver').getLastEvent(msg.id);
             if (!last.startsWith('codex.sse_event:response.completed')) {
-              console.log(`[codex] menu rejected — lastEvent=${last} session=${msg.id.slice(0,8)}`);
+              // console.log(`[codex] menu rejected — lastEvent=${last} session=${msg.id.slice(0,8)}`);
               choices = null;
             } else {
-              console.log(`[codex] menu accepted session=${msg.id.slice(0,8)}`);
+              // console.log(`[codex] menu accepted session=${msg.id.slice(0,8)}`);
             }
           }
           if (choices && sess.presetId === 'claude-code' && msg.menuVersion && (sess._menuConsumedVersion || 0) >= msg.menuVersion) {

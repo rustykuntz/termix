@@ -71,7 +71,7 @@ function handleLogs(req, res) {
     const resAttrs = parseAttrs(rl.resource?.attributes);
     const sessionId = resAttrs['clideck.session_id'];
 
-    // service.name values: claude-code, codex_cli_rs, gemini-cli
+    // service.name values: claude-code, codex_cli_rs, gemini-cli, clideck-agent
     const serviceName = resAttrs['service.name'] || 'unknown';
     let resolvedId = sessionId;
 
@@ -133,6 +133,13 @@ function handleLogs(req, res) {
           codexToolPhasePending.delete(resolvedId);
           clearPendingTools(resolvedId);
           broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
+        }
+
+        if (serviceName === 'clideck-agent' && eventName === 'clideck.turn_start') {
+          broadcastFn?.({ type: 'session.status', id: resolvedId, working: true, source: 'telemetry' });
+        }
+        if (serviceName === 'clideck-agent' && eventName === 'clideck.agent_idle') {
+          broadcastFn?.({ type: 'session.status', id: resolvedId, working: false, source: 'telemetry' });
         }
 
         // Codex can announce a function-call phase before the later tool_decision

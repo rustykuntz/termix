@@ -29,6 +29,7 @@ const ICON_VARIANTS = {
   '/img/codex.png': { dark: '/img/codex-dark.png', light: '/img/codex-light.png' },
   '/img/gemini.png': { all: '/img/gemini-all.png' },
   '/img/opencode.png': { all: '/img/opencode-all.png' },
+  '/img/clideck-agent.svg': { dark: '/img/clideck-agent-dark.svg', light: '/img/clideck-agent-light.svg' },
 };
 
 export function resolveIconPath(icon) {

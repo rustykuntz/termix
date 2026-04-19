@@ -124,7 +124,8 @@ function migrate(cfg) {
     if (cmd.sessionIdPattern === undefined) cmd.sessionIdPattern = preset?.sessionIdPattern || null;
     if (cmd.outputMarker === undefined)     cmd.outputMarker = preset?.outputMarker || null;
     // Claude Code telemetry is built-in, always on
-    if (preset?.presetId === 'claude-code') cmd.telemetryEnabled = true;
+    if (preset?.telemetryEnabled === true) cmd.telemetryEnabled = true;
+    else if (preset?.presetId === 'claude-code') cmd.telemetryEnabled = true;
     else if (cmd.telemetryEnabled === undefined) cmd.telemetryEnabled = false;
     if (cmd.telemetryStatus === undefined)  cmd.telemetryStatus = null;
     // Sync bridge config from preset

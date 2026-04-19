@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <title>Clideck Agent</title>
+  <defs>
+    <linearGradient id="bubbleGradient" x1="64" y1="72" x2="448" y2="408" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F7F8FB"/>
+      <stop offset="1" stop-color="#E5E9F1"/>
+    </linearGradient>
+    <linearGradient id="glyphGradient" x1="122" y1="150" x2="395" y2="355" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1D212B"/>
+      <stop offset="1" stop-color="#3D4656"/>
+    </linearGradient>
+    <filter id="glyphShadow" x="82" y="126" width="350" height="254" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feOffset dx="0" dy="6"/>
+      <feGaussianBlur stdDeviation="7"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.47 0 0 0 0 0.53 0 0 0 0 0.63 0 0 0 0.18 0"/>
+      <feBlend in2="SourceGraphic" result="shape"/>
+    </filter>
+  </defs>
+  <path d="M120 70H392C435.078 70 470 104.922 470 148V266C470 309.078 435.078 344 392 344H215.642L118.159 416.774C111.875 421.467 102.86 417.2 102.562 409.363L99.996 344H88C52.654 344 24 315.346 24 280V166C24 112.98 66.98 70 120 70Z" fill="url(#bubbleGradient)"/>
+  <path d="M120 70H392C435.078 70 470 104.922 470 148V266C470 309.078 435.078 344 392 344H215.642L118.159 416.774C111.875 421.467 102.86 417.2 102.562 409.363L99.996 344H88C52.654 344 24 315.346 24 280V166C24 112.98 66.98 70 120 70Z" stroke="#C6CEDA" stroke-width="2"/>
+  <g filter="url(#glyphShadow)" stroke="url(#glyphGradient)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M134 168L245 256L134 344" stroke-width="40"/>
+    <path d="M292 344H390" stroke-width="38"/>
+  </g>
+</svg>

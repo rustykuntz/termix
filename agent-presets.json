@@ -10,7 +10,7 @@
     "canResume": true,
     "resumeCommand": "claude --resume {{sessionId}}",
     "sessionIdPattern": "Session ID:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
-    "outputMarker": "\u23fa",
+    "outputMarker": "⏺",
     "telemetryConfigPath": "~/.claude/settings.json",
     "telemetrySetup": "Required for working/idle status, Autopilot, notifications, and mobile remote.\n\nCliDeck will add start/stop hooks to ~/.claude/settings.json. Claude will ask for one-time approval on next launch.",
     "telemetryAutoSetup": {
@@ -35,7 +35,7 @@
     "canResume": true,
     "resumeCommand": "codex resume {{sessionId}}",
     "sessionIdPattern": "Session:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
-    "outputMarker": "\u2022",
+    "outputMarker": "•",
     "telemetryConfigPath": "~/.codex/config.toml",
     "telemetryEnv": {
       "OTEL_LOGS_EXPORTER": "otlp",
@@ -59,7 +59,7 @@
     "canResume": true,
     "resumeCommand": "gemini --resume {{sessionId}}",
     "sessionIdPattern": "Session ID:\\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
-    "outputMarker": "\u2726",
+    "outputMarker": "✦",
     "telemetryConfigPath": "~/.gemini/settings.json",
     "telemetrySetup": "Required for working/idle status, resume, Autopilot, notifications, and mobile remote.\n\nCliDeck will add BeforeAgent/AfterAgent/SessionEnd/BeforeTool hooks to ~/.gemini/settings.json.",
     "telemetryAutoSetup": {
@@ -77,12 +77,30 @@
     "canResume": true,
     "resumeCommand": "opencode --session {{sessionId}}",
     "sessionIdPattern": "(ses_[a-zA-Z0-9]{10,})",
-    "outputMarker": "\u2502",
+    "outputMarker": "│",
     "bridge": "opencode",
     "pluginPath": "~/.config/opencode/plugins/clideck-bridge.js",
     "pluginSetup": "Install the CliDeck bridge plugin to enable real-time status and resume.\n\ncp opencode-plugin/clideck-bridge.js ~/.config/opencode/plugins/",
     "telemetryAutoSetup": {
       "label": "Install plugin"
+    }
+  },
+  {
+    "presetId": "clideck-agent",
+    "name": "Clideck Agent",
+    "icon": "/img/clideck-agent.svg",
+    "command": "clideck-agent",
+    "isAgent": true,
+    "canResume": true,
+    "resumeCommand": "clideck-agent --resume {{sessionId}}",
+    "sessionIdPattern": null,
+    "outputMarker": "•",
+    "telemetryEnabled": true,
+    "telemetryEnv": {
+      "OTEL_LOGS_EXPORTER": "otlp",
+      "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+      "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:{{port}}",
+      "OTEL_LOGS_EXPORT_INTERVAL": "2000"
     }
   },
   {

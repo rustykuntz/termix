@@ -27,6 +27,11 @@ function findCommandForPreset(p) {
     || state.cfg.commands.find(c => binName(c.command) === binName(p.command));
 }
 
+function telemetryEnabledForPreset(preset, existing) {
+  if (preset?.telemetryEnabled === true) return true;
+  return !!existing?.telemetryEnabled;
+}
+
 // True if preset binary is missing and the configured command is unchanged from the preset default
 function isPresetMissing(p) {
   if (p.available !== false) return false;
@@ -115,7 +120,7 @@ function createFromPreset(preset, sessionName, cwd, projectId) {
       resumeCommand: preset.resumeCommand,
       sessionIdPattern: preset.sessionIdPattern,
       outputMarker: preset.outputMarker || null,
-      telemetryEnabled: false,
+      telemetryEnabled: telemetryEnabledForPreset(preset),
       telemetryStatus: null,
       bridge: preset.bridge,
     };
@@ -270,7 +275,7 @@ export function openCreator() {
       if (!preset) return;
       let cmd = findCommandForPreset(preset);
       if (!cmd) {
-        cmd = { id: crypto.randomUUID(), presetId: preset.presetId, label: preset.name, icon: preset.icon, command: preset.command, enabled: true, defaultPath: '', isAgent: preset.isAgent, canResume: preset.canResume, resumeCommand: preset.resumeCommand, sessionIdPattern: preset.sessionIdPattern, outputMarker: preset.outputMarker || null, telemetryEnabled: false, telemetryStatus: null, bridge: preset.bridge };
+        cmd = { id: crypto.randomUUID(), presetId: preset.presetId, label: preset.name, icon: preset.icon, command: preset.command, enabled: true, defaultPath: '', isAgent: preset.isAgent, canResume: preset.canResume, resumeCommand: preset.resumeCommand, sessionIdPattern: preset.sessionIdPattern, outputMarker: preset.outputMarker || null, telemetryEnabled: telemetryEnabledForPreset(preset), telemetryStatus: null, bridge: preset.bridge };
         state.cfg.commands.push(cmd);
         send({ type: 'config.update', config: state.cfg });
       }

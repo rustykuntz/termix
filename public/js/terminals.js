@@ -185,6 +185,7 @@ function openMenu(sessionId, anchor) {
   // Project submenu items
   if (projects.length) {
     html += `<div class="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600">Move to project</div>`;
+    html += `<div class="tmx-scroll py-0.5" style="max-height:10rem;overflow-y:auto">`;
     for (const p of projects) {
       const active = entry?.projectId === p.id;
       html += `<button class="menu-action flex items-center gap-2 w-full px-3 py-1.5 text-sm ${active ? 'text-blue-400' : 'text-slate-300'} hover:bg-slate-700 transition-colors text-left" data-action="project" data-project-id="${p.id}">
@@ -192,6 +193,7 @@ function openMenu(sessionId, anchor) {
         ${esc(p.name)}${active ? ' ✓' : ''}
       </button>`;
     }
+    html += `</div>`;
     if (entry?.projectId) {
       html += `<button class="menu-action flex items-center gap-2 w-full px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-700 transition-colors text-left" data-action="unproject">
         <span class="w-2 h-2 rounded-full flex-shrink-0 border border-slate-600"></span>

@@ -93,7 +93,7 @@ function spawnSession(id, cmd, parts, cwd, name, themeId, commandId, savedToken,
   const preset = PRESETS.find(p => binName(p.command) === bin);
   const session = { name, themeId, commandId, cwd, pty: term, chunks: [], chunksSize: 0, sessionToken: savedToken || null, projectId: projectId || null, presetId: preset?.presetId || 'shell', working: undefined };
   sessions.set(id, session);
-  transcript.setFinalizeOnIdle(id, ['claude-code', 'codex', 'gemini-cli', 'opencode'].includes(session.presetId) ? session.presetId : null);
+  transcript.setFinalizeOnIdle(id, ['claude-code', 'codex', 'gemini-cli', 'opencode', 'clideck-agent'].includes(session.presetId) ? session.presetId : null);
 
   // Always watch telemetry-backed agents so OTLP fallback matching can attach
   // early events to this session even when the agent omits clideck.session_id.
@@ -445,7 +445,7 @@ function getResumable(cfg) {
 
 function sendBuffers(ws) {
   for (const [id, s] of sessions) {
-    if (['claude-code', 'codex', 'gemini-cli', 'opencode'].includes(s.presetId) && !s.working) {
+    if (['claude-code', 'codex', 'gemini-cli', 'opencode', 'clideck-agent'].includes(s.presetId) && !s.working) {
       const text = transcript.getReplayText(id, s.presetId);
       if (text) {
         ws.send(JSON.stringify({ type: 'session.history', id, text, replay: true }));
