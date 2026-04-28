@@ -24,7 +24,13 @@ let resumable = [];
 
 const broadcastListeners = [];
 
-function addBroadcastListener(fn) { broadcastListeners.push(fn); }
+function addBroadcastListener(fn) {
+  broadcastListeners.push(fn);
+  return () => {
+    const idx = broadcastListeners.indexOf(fn);
+    if (idx >= 0) broadcastListeners.splice(idx, 1);
+  };
+}
 
 function broadcast(msg) {
   const raw = JSON.stringify(msg);

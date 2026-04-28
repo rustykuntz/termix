@@ -45,13 +45,19 @@ Or just run it once with `npx clideck`. Works on macOS and Windows. Node 18+. Li
 
 **Session resume** - close the lid, reopen tomorrow, pick up where things left off. each agent's session ID is captured automatically.
 
-**Roles** - give agents reusable identities like programmer, reviewer, or product manager. prompts are injected automatically when a session starts.
-
 **Autopilot** - enable autopilot on a project, walk away. it watches for one agent to finish, hands the output to the next one, and keeps going until the work is done or blocked. this is the part that makes sleep possible. routes content verbatim, no rewriting or summarizing. fingerprints each output and tracks handoff history to guard against repeat loops. ~50 output tokens per routing decision. supports Anthropic, OpenAI, Google, Groq, xAI, Mistral, OpenRouter, Cerebras.
 
 <p align="center">
   <img src="assets/autopilot.gif" width="720" alt="Autopilot routing work between agents">
 </p>
+
+**Ask another session** - from inside any CliDeck session, an agent can consult another session in the same project and get the answer back as command output:
+
+```bash
+clideck ask --session "Reviewer" --message "Review this output and return findings." --timeout 10m
+```
+
+CliDeck injects the message into the real target terminal, submits it, waits for the target session to finish, then returns the latest response to the caller.
 
 **Mobile remote** - the agents keep running on the local machine. status, prompts, history, and replies stay available from a phone while away. E2E encrypted, no account needed.
 

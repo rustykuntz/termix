@@ -199,6 +199,10 @@ function readEntries(id) {
   } catch { return []; }
 }
 
+function getEntriesSince(id, ts) {
+  return readEntries(id).filter(e => Number(e.ts || 0) >= ts);
+}
+
 function foldTurns(entries, n, order) {
   const turns = [];
   const fromStart = order === 'start';
@@ -276,4 +280,4 @@ function detectMenu(lines, presetId) {
   return choices.length ? choices : null;
 }
 
-module.exports = { init, trackInput, recordInjectedInput, trackOutput, updateAgentCandidate, commitAgentCandidate, clearAgentCandidate, parseTurnsFromLines, getTurns, getCache, getReplayText, clear, setPrefix, setFinalizeOnIdle, detectMenu };
+module.exports = { init, trackInput, recordInjectedInput, trackOutput, updateAgentCandidate, commitAgentCandidate, clearAgentCandidate, parseTurnsFromLines, getTurns, getEntriesSince, getCache, getReplayText, clear, setPrefix, setFinalizeOnIdle, detectMenu };
