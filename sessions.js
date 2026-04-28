@@ -1,6 +1,7 @@
 const pty = require('node-pty');
 const { readFileSync, writeFileSync, existsSync } = require('fs');
 const { join } = require('path');
+const crypto = require('crypto');
 const { parseCommand, resolveValidDir, defaultShell, binName } = require('./utils');
 const activity = require('./activity');
 const transcript = require('./transcript');

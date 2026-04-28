@@ -17,7 +17,8 @@ const shownAgentHealthToasts = new Set();
 let reconnectReplaySkip = null;
 
 function connect() {
-  state.ws = new WebSocket(`ws://${location.host}`);
+  const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  state.ws = new WebSocket(`${wsProtocol}//${location.host}`);
 
   state.ws.onopen = () => {
     reconnectReplaySkip = new Set(state.terms.keys());

@@ -69,9 +69,9 @@ const hostArg = hostIdx >= 0 ? process.argv[hostIdx + 1] : undefined;
 const HOST = hostIdx < 0 ? '127.0.0.1' : (hostArg && !hostArg.startsWith('-') ? hostArg : '0.0.0.0');
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.png': 'image/png', '.svg': 'image/svg+xml', '.mp3': 'audio/mpeg' };
 const ALIASES = {
-  '/xterm.css':    join(__dirname, 'node_modules/@xterm/xterm/css/xterm.css'),
-  '/xterm.js':     join(__dirname, 'node_modules/@xterm/xterm/lib/xterm.js'),
-  '/addon-fit.js': join(__dirname, 'node_modules/@xterm/addon-fit/lib/addon-fit.js'),
+  '/xterm.css':    require.resolve('@xterm/xterm/css/xterm.css'),
+  '/xterm.js':     require.resolve('@xterm/xterm/lib/xterm.js'),
+  '/addon-fit.js': require.resolve('@xterm/addon-fit/lib/addon-fit.js'),
 };
 
 const PUBLIC_ROOT = join(__dirname, 'public');
@@ -265,6 +265,9 @@ const server = http.createServer((req, res) => {
 const allowedOrigins = new Set([
   `http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`,
   `http://[::1]:${PORT}`, `http://${HOST}:${PORT}`,
+  `https://localhost:${PORT}`, `https://127.0.0.1:${PORT}`,
+  `https://[::1]:${PORT}`, `https://${HOST}:${PORT}`,
+  `https://${HOST}`,
 ]);
 const wss = new WebSocketServer({
   server,

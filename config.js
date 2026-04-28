@@ -1,5 +1,6 @@
 const { readFileSync, writeFileSync, existsSync } = require('fs');
 const { join } = require('path');
+const crypto = require('crypto');
 const os = require('os');
 const { DATA_DIR } = require('./paths');
 const { defaultShell, binName } = require('./utils');
