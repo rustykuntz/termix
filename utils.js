@@ -1,4 +1,4 @@
-const { chmodSync, statSync, readdirSync } = require('fs');
+const { chmodSync, existsSync, statSync, readdirSync } = require('fs');
 const { dirname, join } = require('path');
 
 function ensurePtyHelper() {
@@ -55,7 +55,13 @@ function listDirs(path, showHidden) {
   }
 }
 
-const defaultShell = process.platform === 'win32' ? (process.env.COMSPEC || 'cmd.exe') : '/bin/zsh';
+function resolveDefaultShell() {
+  if (process.platform === 'win32') return process.env.COMSPEC || 'cmd.exe';
+  const candidates = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh'].filter(Boolean);
+  return candidates.find(shell => existsSync(shell)) || '/bin/sh';
+}
+
+const defaultShell = resolveDefaultShell();
 
 function binName(command) {
   const m = command.match(/^(['"])(.*?)\1/);

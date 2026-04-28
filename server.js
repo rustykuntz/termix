@@ -8,6 +8,10 @@ function terminalLink(url, text = url) {
   return `\u001B]8;;${url}\u0007${text}\u001B]8;;\u0007`;
 }
 
+function openUrlHint() {
+  return process.platform === 'darwin' ? 'Cmd+click to open' : 'Ctrl+click to open';
+}
+
 // --- Self-update check (runs before server starts) ---
 const currentVersion = require('./package.json').version;
 const { execFile, execSync } = require('child_process');
@@ -291,6 +295,7 @@ server.listen(PORT, HOST, () => {
   const v = require('./package.json').version;
   const url = `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
   const clickableUrl = terminalLink(url);
+  const urlHint = openUrlHint();
   console.log(`
 \x1b[38;5;105m  ╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸\x1b[0m
 
@@ -305,7 +310,7 @@ server.listen(PORT, HOST, () => {
 
 \x1b[38;5;245m  v${v}\x1b[0m
 
-\x1b[38;5;252m  ▸ Ready at \x1b[38;5;44m${clickableUrl}\x1b[38;5;245m (Cmd+click to open)\x1b[0m
+\x1b[38;5;252m  ▸ Ready at \x1b[38;5;44m${clickableUrl}\x1b[38;5;245m (${urlHint})\x1b[0m
 \x1b[38;5;245m  ▸ Stop with \x1b[38;5;252mCtrl+C\x1b[38;5;245m · Restart anytime with \x1b[38;5;252mclideck\x1b[0m
 ${HOST !== '127.0.0.1' ? '\x1b[38;5;208m  ▸ Warning: listening on ' + HOST + ' — no authentication, anyone on the network can connect\x1b[0m\n' : ''}`);
 });

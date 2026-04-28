@@ -55,6 +55,9 @@ function connect() {
         state.resumable = msg.list;
         renderResumable();
         break;
+      case 'error':
+        showToast(msg.message || 'CliDeck action failed.', { type: 'error', title: 'CliDeck Error', duration: 5000 });
+        break;
       case 'sessions':
         {
           const liveIds = new Set(msg.list.map(s => s.id));

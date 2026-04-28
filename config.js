@@ -95,6 +95,12 @@ function deepCopy(obj) { return JSON.parse(JSON.stringify(obj)); }
 
 const PRESETS = JSON.parse(readFileSync(join(__dirname, 'agent-presets.json'), 'utf8'));
 for (const p of PRESETS) if (p.presetId === 'shell') p.command = defaultShell;
+function isPresetEnabled(preset) {
+  if (!preset?.enabledIfEnv) return true;
+  const value = String(process.env[preset.enabledIfEnv] || '').trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes';
+}
+const EXPOSED_PRESETS = PRESETS.filter(isPresetEnabled);
 
 function matchPreset(cmd) {
   const bin = binName(cmd.command);
@@ -113,6 +119,9 @@ function migrate(cfg) {
   // Backfill and sync fields from presets
   for (const cmd of cfg.commands) {
     const preset = cmd.presetId ? PRESETS.find(p => p.presetId === cmd.presetId) : matchPreset(cmd);
+    if (preset?.presetId === 'shell' && (!cmd.command || (cmd.command === '/bin/zsh' && !existsSync('/bin/zsh')))) {
+      cmd.command = defaultShell;
+    }
     // Stamp presetId for reliable lookup
     if (preset && !cmd.presetId) cmd.presetId = preset.presetId;
     // Icon always syncs from preset — the preset is the source of truth for logos
@@ -140,7 +149,7 @@ function migrate(cfg) {
     }
   }
   // Auto-add any shipped presets not yet in the commands list
-  for (const preset of PRESETS) {
+  for (const preset of EXPOSED_PRESETS) {
     const exists = cfg.commands.some(c => c.presetId === preset.presetId || matchPreset(c)?.presetId === preset.presetId);
     if (!exists) {
       cfg.commands.push({

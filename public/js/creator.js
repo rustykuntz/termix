@@ -104,31 +104,61 @@ function sortedPresets() {
 
 function createFromPreset(preset, sessionName, cwd, projectId) {
   // Find existing command matching this preset
-  let cmd = findCommandForPreset(preset);
-  // Auto-create the command if it doesn't exist yet
-  if (!cmd) {
-    cmd = {
-      id: crypto.randomUUID(),
-      presetId: preset.presetId,
-      label: preset.name,
-      icon: preset.icon,
-      command: preset.command,
-      enabled: true,
-      defaultPath: '',
-      isAgent: preset.isAgent,
-      canResume: preset.canResume,
-      resumeCommand: preset.resumeCommand,
-      sessionIdPattern: preset.sessionIdPattern,
-      outputMarker: preset.outputMarker || null,
-      telemetryEnabled: telemetryEnabledForPreset(preset),
-      telemetryStatus: null,
-      bridge: preset.bridge,
-    };
-    state.cfg.commands.push(cmd);
-    send({ type: 'config.update', config: state.cfg });
-  }
+  const cmd = ensureCommandForPreset(preset);
   send({ type: 'create', commandId: cmd.id, name: sessionName, cwd, projectId: projectId || undefined, ...estimateSize() });
   localStorage.setItem(MRU_KEY, preset.presetId);
+}
+
+function ensureCommandForPreset(preset) {
+  let cmd = findCommandForPreset(preset);
+  if (cmd) return cmd;
+  cmd = {
+    id: crypto.randomUUID(),
+    presetId: preset.presetId,
+    label: preset.name,
+    icon: preset.icon,
+    command: preset.command,
+    enabled: true,
+    defaultPath: '',
+    isAgent: preset.isAgent,
+    canResume: preset.canResume,
+    resumeCommand: preset.resumeCommand,
+    sessionIdPattern: preset.sessionIdPattern,
+    outputMarker: preset.outputMarker || null,
+    telemetryEnabled: telemetryEnabledForPreset(preset),
+    telemetryStatus: null,
+    bridge: preset.bridge,
+  };
+  state.cfg.commands.push(cmd);
+  send({ type: 'config.update', config: state.cfg });
+  return cmd;
+}
+
+function ensureShellCommand() {
+  let cmd = state.cfg.commands.find(c => c.presetId === 'shell' || (!c.isAgent && !c.presetId));
+  if (cmd) return cmd;
+  const shellPreset = state.presets.find(p => p.presetId === 'shell');
+  const command = shellPreset?.command || state.cfg.defaultShell;
+  if (!command) return null;
+  cmd = {
+    id: crypto.randomUUID(),
+    presetId: 'shell',
+    label: 'Shell',
+    icon: shellPreset?.icon || 'terminal',
+    command,
+    enabled: true,
+    defaultPath: '',
+    isAgent: false,
+    canResume: false,
+    resumeCommand: null,
+    sessionIdPattern: null,
+    outputMarker: null,
+    telemetryEnabled: false,
+    telemetryStatus: null,
+  };
+  state.cfg.commands.push(cmd);
+  send({ type: 'config.update', config: state.cfg });
+  return cmd;
 }
 
 export function openCreator() {
@@ -273,12 +303,7 @@ export function openCreator() {
     if (setupBtn) {
       const preset = state.presets.find(p => p.presetId === setupBtn.dataset.preset);
       if (!preset) return;
-      let cmd = findCommandForPreset(preset);
-      if (!cmd) {
-        cmd = { id: crypto.randomUUID(), presetId: preset.presetId, label: preset.name, icon: preset.icon, command: preset.command, enabled: true, defaultPath: '', isAgent: preset.isAgent, canResume: preset.canResume, resumeCommand: preset.resumeCommand, sessionIdPattern: preset.sessionIdPattern, outputMarker: preset.outputMarker || null, telemetryEnabled: telemetryEnabledForPreset(preset), telemetryStatus: null, bridge: preset.bridge };
-        state.cfg.commands.push(cmd);
-        send({ type: 'config.update', config: state.cfg });
-      }
+      const cmd = ensureCommandForPreset(preset);
       document.dispatchEvent(new CustomEvent('clideck:setup', { detail: { commandId: cmd.id } }));
       return;
     }
@@ -345,9 +370,16 @@ function showInstallToast(preset) {
   toast.querySelector('.add-btn').onclick = () => {
     dismiss();
     closeCreator();
+    ensureCommandForPreset(preset);
+    if (preset.telemetryAutoSetup) {
+      setTimeout(() => send({ type: 'telemetry.autosetup', presetId: preset.presetId }), 1000);
+    }
     // Find or create the shell command, then spawn a session running the install
-    const shellCmd = state.cfg.commands.find(c => c.presetId === 'shell' || (!c.isAgent && !c.presetId));
-    if (!shellCmd) return;
+    const shellCmd = ensureShellCommand();
+    if (!shellCmd) {
+      showToast('Could not find a shell command to run the installer.', { type: 'error', title: 'Install Failed' });
+      return;
+    }
     const installId = crypto.randomUUID();
     send({ type: 'create', commandId: shellCmd.id, name: `Installing ${preset.name}`, installId, ...estimateSize() });
     const handler = (e) => {
