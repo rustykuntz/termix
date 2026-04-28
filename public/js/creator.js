@@ -135,10 +135,17 @@ function ensureCommandForPreset(preset) {
 }
 
 function ensureShellCommand() {
-  let cmd = state.cfg.commands.find(c => c.presetId === 'shell' || (!c.isAgent && !c.presetId));
-  if (cmd) return cmd;
   const shellPreset = state.presets.find(p => p.presetId === 'shell');
   const command = shellPreset?.command || state.cfg.defaultShell;
+  let cmd = state.cfg.commands.find(c => c.presetId === 'shell' || (!c.isAgent && !c.presetId && String(c.label || '').toLowerCase() === 'shell'));
+  if (cmd) {
+    if (!cmd.command || (cmd.command === '/bin/zsh' && command && command !== '/bin/zsh')) {
+      cmd.presetId = 'shell';
+      cmd.command = command;
+      send({ type: 'config.update', config: state.cfg });
+    }
+    return cmd;
+  }
   if (!command) return null;
   cmd = {
     id: crypto.randomUUID(),

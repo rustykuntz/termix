@@ -107,6 +107,23 @@ function matchPreset(cmd) {
   return PRESETS.find(p => binName(p.command) === bin);
 }
 
+function firstCommandToken(command) {
+  const raw = String(command || '').trim();
+  const m = raw.match(/^(['"])(.*?)\1|^(\S+)/);
+  return m ? (m[2] || m[3] || '') : '';
+}
+
+function commandPathMissing(command) {
+  const token = firstCommandToken(command);
+  return !token || (token.startsWith('/') && !existsSync(token));
+}
+
+function isShellCommand(cmd, preset) {
+  return preset?.presetId === 'shell'
+    || cmd.presetId === 'shell'
+    || (!cmd.isAgent && !cmd.presetId && String(cmd.label || '').toLowerCase() === 'shell');
+}
+
 function migrate(cfg) {
   // Migrate profiles → defaultTheme
   if (cfg.profiles && !cfg.defaultTheme) {
@@ -118,8 +135,13 @@ function migrate(cfg) {
   if (!cfg.defaultTheme || cfg.defaultTheme === 'solarized-dark') cfg.defaultTheme = 'catppuccin-mocha';
   // Backfill and sync fields from presets
   for (const cmd of cfg.commands) {
-    const preset = cmd.presetId ? PRESETS.find(p => p.presetId === cmd.presetId) : matchPreset(cmd);
-    if (preset?.presetId === 'shell' && (!cmd.command || (cmd.command === '/bin/zsh' && !existsSync('/bin/zsh')))) {
+    let preset = cmd.presetId ? PRESETS.find(p => p.presetId === cmd.presetId) : matchPreset(cmd);
+    if (isShellCommand(cmd, preset)) {
+      preset = PRESETS.find(p => p.presetId === 'shell') || preset;
+      cmd.presetId = 'shell';
+      cmd.label = cmd.label || 'Shell';
+    }
+    if (preset?.presetId === 'shell' && commandPathMissing(cmd.command)) {
       cmd.command = defaultShell;
     }
     // Stamp presetId for reliable lookup
