@@ -1,0 +1,105 @@
+{
+  "id": "supertonic",
+  "name": "Supertonic Voice",
+  "version": "1.2.10",
+  "apiVersion": 1,
+  "enabledByDefault": true,
+  "description": "Private, on-device multilingual speech powered by Supertonic 3. The model loads only when you ask CliDeck to speak.",
+  "icon": "waveform",
+  "commands": [
+    {
+      "name": "speak",
+      "description": "Read text aloud in the active CliDeck client.",
+      "usage": "supertonic/speak <text>"
+    }
+  ],
+  "settings": [
+    {
+      "key": "voice",
+      "label": "Voice",
+      "type": "select",
+      "default": "female-2",
+      "description": "Five bundled local voices. Preview a voice before selecting it.",
+      "options": [
+        { "value": "female-1", "label": "Female 1", "preview": "public/voices/female-1-preview.mp3" },
+        { "value": "female-2", "label": "Female 2", "preview": "public/voices/female-2-preview.mp3" },
+        { "value": "yara", "label": "Yara", "preview": "public/voices/yara-preview.mp3" },
+        { "value": "mike", "label": "Mike", "preview": "public/voices/mike-preview.mp3" },
+        { "value": "dov", "label": "Dov", "preview": "public/voices/dov-preview.mp3" }
+      ]
+    },
+    {
+      "key": "shortcut",
+      "label": "Read selection shortcut",
+      "type": "shortcut",
+      "default": "F5",
+      "description": "Optional keyboard shortcut for reading selected terminal text. CliDeck prevents plugin conflicts."
+    },
+    {
+      "key": "language",
+      "label": "Language",
+      "type": "select",
+      "default": "en",
+      "description": "Auto works across languages; choose one when pronunciation needs a hint.",
+      "options": [
+        { "value": "na", "label": "Auto / language-agnostic" },
+        { "value": "en", "label": "English" },
+        { "value": "ar", "label": "Arabic" },
+        { "value": "bg", "label": "Bulgarian" },
+        { "value": "hr", "label": "Croatian" },
+        { "value": "cs", "label": "Czech" },
+        { "value": "da", "label": "Danish" },
+        { "value": "nl", "label": "Dutch" },
+        { "value": "et", "label": "Estonian" },
+        { "value": "fi", "label": "Finnish" },
+        { "value": "fr", "label": "French" },
+        { "value": "de", "label": "German" },
+        { "value": "el", "label": "Greek" },
+        { "value": "hi", "label": "Hindi" },
+        { "value": "hu", "label": "Hungarian" },
+        { "value": "id", "label": "Indonesian" },
+        { "value": "it", "label": "Italian" },
+        { "value": "ja", "label": "Japanese" },
+        { "value": "ko", "label": "Korean" },
+        { "value": "lv", "label": "Latvian" },
+        { "value": "lt", "label": "Lithuanian" },
+        { "value": "pl", "label": "Polish" },
+        { "value": "pt", "label": "Portuguese" },
+        { "value": "ro", "label": "Romanian" },
+        { "value": "ru", "label": "Russian" },
+        { "value": "sk", "label": "Slovak" },
+        { "value": "sl", "label": "Slovenian" },
+        { "value": "es", "label": "Spanish" },
+        { "value": "sv", "label": "Swedish" },
+        { "value": "tr", "label": "Turkish" },
+        { "value": "uk", "label": "Ukrainian" },
+        { "value": "vi", "label": "Vietnamese" }
+      ]
+    },
+    {
+      "key": "quality",
+      "label": "Quality steps",
+      "type": "number",
+      "default": 12,
+      "min": 5,
+      "max": 12
+    },
+    {
+      "key": "normalization",
+      "label": "Text normalization",
+      "type": "select",
+      "default": "english",
+      "description": "Expand technical symbols, acronyms, units, and lettered lists before speaking.",
+      "options": [
+        { "value": "english", "label": "English technical" },
+        { "value": "off", "label": "Off / original text" }
+      ]
+    },
+    {
+      "key": "auto-read",
+      "label": "Read completed replies automatically",
+      "type": "toggle",
+      "default": false
+    }
+  ]
+}

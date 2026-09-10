@@ -1,7 +1,0 @@
-{
-  "name": "clideck-plugin-autopilot",
-  "private": true,
-  "dependencies": {
-    "@mariozechner/pi-ai": ">=0.62.0"
-  }
-}

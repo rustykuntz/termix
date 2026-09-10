@@ -1,115 +1,115 @@
-<p align="center">
-  <img src="public/img/clideck-logo-icon.png" width="64" alt="clideck logo">
-</p>
+# clideck
 
-<h1 align="center">clideck</h1>
+One place for your AI agents to work with you and each other.
 
-<p align="center">
-  one screen for AI coding agents.
-  <br><br>
-  <a href="https://clideck.dev">Website</a> · <a href="https://docs.clideck.dev">Docs</a> · <a href="https://youtu.be/hICrtjGAeDk">Demo</a> · <a href="https://www.npmjs.com/package/clideck"><img src="https://img.shields.io/npm/v/clideck" alt="npm version"></a>
-</p>
+![CliDeck with a team of agents and a Markdown report open](public/clideck-team.png)
 
-<!-- TODO: Replace with a ~10 second GIF showing: open clideck,
-     sidebar with multiple agents across projects, click between them,
-     one working one idle. No narration needed. -->
+Put a frontend agent, a backend agent, and a researcher in the same project. They can
+use different AI providers. Tell one to ask another for help, and the request and
+answer travel between their actual terminals. You stay part of the conversation.
 
-<p align="center">
-  <img src="assets/clideck-themes.jpg" width="720" alt="clideck dashboard">
-</p>
-
-clideck is a local app for running multiple AI coding agents without juggling terminals. Claude Code, Codex, Gemini CLI, OpenCode, and Pi all live in one browser window with a chat-style sidebar, live status, message previews, session resume, and projects to keep things organized. an autopilot routes work between agents automatically, and an E2E encrypted mobile relay gives full control over all agents from a phone.
-
-the main problem with using multiple agents is not starting them. it is managing them. terminals pile up, finished work gets missed, good sessions disappear after a restart. clideck does not sit in the middle rewriting prompts or output - it only watches lightweight status signals from each agent so it can tell which agent is working, which is idle, and which is waiting. everything runs locally, no data leaves your machine.
-
-## Why this exists
-
-Terminal multiplexers are great at panes. clideck is about conversations.
-
-A pane grid is flat. agent work usually is not. projects, previews, timestamps, notifications, resume, and sometimes a bit of routing between specialists all fit more naturally into a chat app layout. it also maps naturally to mobile, so the same mental model works on desktop and phone.
+CliDeck runs the agent CLIs you already use. No orchestration code to write, and no
+new agent API to wire up.
 
 ## Quick start
 
-```bash
-npm install -g clideck
+Requires **Node.js 22.12 or newer** and at least one installed agent CLI.
+
+The v2 npm publication is pending. For now, download `clideck-2.0.0.tgz` from
+[the GitHub release](https://github.com/rustykuntz/clideck/releases/tag/v2.0.0)
+and run `npm install -g ./clideck-2.0.0.tgz`, then `clideck`.
+The registry commands below will work after npm publication:
+
+```sh
+npm install -g clideck@2
 clideck
 ```
 
-Open [localhost:4000](http://localhost:4000). Click **+**, pick an agent, start working.
+Open **http://127.0.0.1:4100**. Create a project, open a few sessions, and give them
+names that describe their work. The short tour shows you around.
 
-Or just run it once with `npx clideck`. Node 18+. Works on macOS, Linux, and Windows 10 1809+.
+You can also run `npx clideck@2`. Coming from v1? Read [the upgrade notes](UPGRADING.md)
+first: v2 uses a separate workspace and does not import v1 settings or sessions.
 
-Linux ships prebuilt binaries for glibc x64 and arm64, so nothing compiles. Other Linux setups need to build node-pty from source:
+## Agents working together
 
-```bash
-# Debian/Ubuntu on an architecture with no prebuilt binary
-sudo apt-get install -y build-essential python3 && npm install -g clideck --allow-scripts=node-pty
+Say “ask the reviewer to check my work.” Your agent discovers the reviewer, sends
+the request, and gets the answer back. The reviewer can use a different provider.
 
-# Alpine/musl - a glibc prebuild does exist, so the source build has to be forced
-apk add python3 make g++ && npm_config_build_from_source=true npm install -g clideck --allow-scripts=node-pty
-```
+- **Projects** keep sessions together around a folder.
+- **Session names are addresses** such as `@website/reviewer`. Type `@@` in a
+  terminal to find them.
+- **CliDeck Ask** carries requests and replies between sessions. Agents can check
+  who is available or steer a session that is already working.
+- **You stay involved** through the terminals, notifications, and questions agents
+  can send back to you.
 
-Hit a problem on Linux? [open an issue](https://github.com/rustykuntz/clideck/issues).
+The agent-facing commands are available inside CliDeck sessions:
 
-If port `4000` is already in use:
-
-```bash
-clideck --port 4001
-```
-
-## What makes it useful
-
-**Live status** - see which agent is working and which is waiting. Status detection for Claude Code, Codex, Gemini CLI, OpenCode, and Pi.
-
-**Session resume** - close the lid, reopen tomorrow, pick up where things left off. each agent's session ID is captured automatically.
-
-**Ask another session** - from inside any CliDeck session, an agent can consult another session and get the answer back as command output:
-
-<p align="center">
-  <img src="assets/clideck-ask.png" width="720" alt="One agent asking another session and getting findings back">
-</p>
-
-```bash
+```sh
 clideck agents
-clideck ask --session "Reviewer" --message "Review this output and return findings." --timeout 10m
+clideck ask "@website/reviewer" "Review the changes and report the important issues"
+clideck ask status
 ```
 
-CliDeck injects the message into the real target terminal, submits it, waits for the target session to finish, then returns the latest response to the caller.
+## View what they produce
 
-By default, target lookup is limited to the caller's project. For cross-project asks, discover the full address first:
+Ask an agent to show its work inside CliDeck. Markdown reports, HTML pages, images,
+videos, PDFs, diagrams, and diffs open in preview tabs beside the terminals. You can
+also drop files onto the tab strip.
 
-```bash
-clideck agents --all
-clideck ask "@website/Docs Writer" "Check if the docs mention the new CLI flags." --timeout 15m
+```sh
+clideck show report.md
+clideck show demo.html
+clideck show walkthrough.mp4
 ```
 
-If project or session names contain spaces, quote the whole target. The target is another LLM agent, not a fast CLI command, so callers should set both `clideck ask --timeout` and their own shell/tool timeout high enough. If the target session is busy, CliDeck does not queue the message; the caller gets a clear busy response and can retry later or ask another idle session.
+## Also included
 
-**Mobile remote** - the agents keep running on the local machine. status, prompts, history, and replies stay available from a phone while away. E2E encrypted, no account needed.
+- Claude Code, Codex, Gemini, OpenCode, Pi, and shell sessions, plus custom commands.
+- Saved prompts with `//` lookup and `{{session_name}}` / `{{project_name}}` fields.
+- Session resume, terminal history, working/idle notifications, and session backups.
+- Light and dark themes, configurable shortcuts, and a plugin SDK.
+- **Supertonic Voice** reads replies and selected text aloud.
+- **Emoji** support and optional **Smart Dictation** for speaking your prompts.
 
-**Native terminals** - each session opens into its real terminal. keys go straight to the agent, nothing sits in the middle.
+Voice models are downloaded when set up; they are not included in the npm package.
+OmniVoice is not part of this release.
 
-## Supported agents
+## What changed in v2
 
-Claude Code, Codex, Gemini CLI, OpenCode, Pi, Shell, and any other terminal tool.
+We removed Autopilot because today's agents already have sub-agents. The CLI is
+the right interface for this generation of CLI agents, so CliDeck focuses on
+helping them work across providers with you.
 
-## Also
+We also removed mobile control. Harnesses such as Codex and Claude Code now provide
+their own remote access, and maintaining another mobile control layer no longer
+makes sense for CliDeck.
 
-- **Projects** - group sessions, drag and drop
-- **Prompt library** - save reusable prompts, type `//` to paste
-- **Search** - find sessions or scroll through transcripts
-- **Plugins** - server + client API. ships with Voice Input, Trim Clip, and Autopilot. build your own
-- **15 themes** - dark, light, or make your own
-- **Notifications** - browser + sound alerts when agents finish
+The focus is projects where you and agents from multiple providers work together,
+with their conversations and outputs in one place.
+
+## Running locally
+
+```sh
+clideck --port 4200
+clideck --data-dir /path/to/clideck-data
+clideck --help
+clideck --version
+```
+
+`CLIDECK_PORT` also sets the port. CliDeck v2 binds to loopback only. Its default
+data directory is `~/.clideck-next`, kept separate from v1's `~/.clideck`.
+Agent CLIs use their own accounts and network connections.
+
+For development, run `npm ci`, `npm test`, then `npm start`.
 
 ## Docs
 
-Guides, agent setup, plugin development: **[docs.clideck.dev](https://docs.clideck.dev)**
-
-## Acknowledgments
-
-Built with [xterm.js](https://xtermjs.org/).
+- [Upgrading from v1](UPGRADING.md)
+- [Session backup and recovery](SESSION-BACKUP.md)
+- [Plugin SDK](PLUGIN-SDK.md)
 
 ## License
 
-MIT - see [LICENSE](LICENSE).
+[MIT](LICENSE)

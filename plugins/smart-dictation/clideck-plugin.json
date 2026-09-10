@@ -1,0 +1,30 @@
+{
+  "id": "smart-dictation",
+  "name": "Dictation",
+  "version": "2.0.0",
+  "apiVersion": 1,
+  "enabledByDefault": false,
+  "description": "Private streaming English dictation on Mac and Ubuntu, started and stopped with a keyboard shortcut.",
+  "icon": "mic",
+  "settings": [
+    {
+      "key": "shortcut",
+      "label": "Activation shortcut",
+      "type": "shortcut",
+      "default": "F4",
+      "description": "Press to start dictating. Press again to paste the text without sending and turn the microphone off."
+    },
+    {
+      "key": "device",
+      "label": "Processor",
+      "type": "select",
+      "default": "auto",
+      "description": "Automatic uses Metal on Apple Silicon and CPU on Intel Mac or Ubuntu. No NVIDIA graphics card required.",
+      "options": [
+        { "value": "auto", "label": "Automatic" },
+        { "value": "mps", "label": "Apple Metal" },
+        { "value": "cpu", "label": "CPU" }
+      ]
+    }
+  ]
+}

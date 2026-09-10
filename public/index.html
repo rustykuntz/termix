@@ -1,558 +1,147 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>CliDeck</title>
-  <link rel="icon" type="image/png" href="/img/clideck-logo-icon.png">
-  <link rel="stylesheet" href="/xterm.css">
-  <link rel="stylesheet" href="/tailwind.css">
-  <style>
-    :root {
-      --color-project-header-bg: #191c21;
-      --color-unread-pill-bg: rgba(59, 130, 246, 0.15);
-      --color-filter-unread-bg: transparent;
-      --color-list-row-hover: color-mix(in srgb, var(--color-chat-hover) 55%, transparent);
-      --color-list-row-active: var(--color-chat-active);
-      --color-session-icon-bg: #242626;
-    }
-    .light {
-      --color-project-header-bg: #f6f5f5;
-      --color-unread-pill-bg: #f6f5f5;
-      --color-filter-unread-bg: #f6f5f5;
-      --color-session-icon-bg: #f7f5f3;
-    }
-    .session-row,
-    .resumable-row,
-    .pill-row {
-      margin: 2px 8px;
-      border-radius: 10px;
-      transition: background-color 0.18s ease;
-    }
-    .session-row:hover,
-    .resumable-row:hover,
-    .pill-row:hover {
-      background: var(--color-list-row-hover) !important;
-    }
-    .session-row.active-session,
-    .pill-row.active-session {
-      background: var(--color-list-row-active) !important;
-    }
-    .project-group {
-      margin: 8px 0 4px;
-    }
-    .project-group:first-child {
-      margin-top: 4px;
-    }
-    .project-header {
-      margin: 0 8px 4px;
-      border-radius: 10px;
-    }
-    #sidebar-shell {
-      position: relative;
-      display: flex;
-      flex-shrink: 0;
-      height: 100%;
-    }
-    .terminal-input-actions {
-      position: absolute;
-      right: 18px;
-      bottom: 18px;
-      z-index: 20;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      pointer-events: auto;
-      transition: opacity .18s cubic-bezier(.16,1,.3,1), transform .22s cubic-bezier(.16,1,.3,1);
-    }
-    .terminal-input-actions.is-hidden {
-      opacity: 0;
-      transform: translateY(12px) scale(.92);
-      pointer-events: none;
-    }
-    .terminal-input-action {
-      width: 42px;
-      height: 42px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 9999px;
-      border: 1px solid color-mix(in srgb,var(--color-border) 58%,transparent);
-      background: linear-gradient(180deg,color-mix(in srgb,var(--color-raised) 92%,transparent),color-mix(in srgb,var(--color-surface) 90%,transparent));
-      color: var(--color-soft);
-      box-shadow: 0 18px 38px -18px var(--color-shadow),0 0 0 1px color-mix(in srgb,var(--color-bright) 5%,transparent) inset;
-      transition: color .16s ease,border-color .16s ease,background-color .16s ease,transform .22s cubic-bezier(.16,1,.3,1);
-    }
-    .terminal-input-action svg {
-      width: 18px;
-      height: 18px;
-    }
-    .terminal-input-action:hover {
-      color: var(--color-bright);
-      border-color: color-mix(in srgb,var(--color-dim) 82%,transparent);
-      transform: translateY(-2px) scale(1.04);
-    }
-    .terminal-input-action.is-active {
-      color: var(--color-bright);
-      border-color: color-mix(in srgb,var(--color-dim) 82%,transparent);
-      animation: terminalMicPulse 1.05s ease-in-out infinite;
-    }
-    .terminal-input-action.is-busy {
-      color: var(--color-bright);
-      pointer-events: none;
-      animation: terminalMicPulse 1.25s ease-in-out infinite;
-    }
-    @keyframes terminalMicPulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.38); }
-      50% { box-shadow: 0 0 0 0.55rem rgba(59, 130, 246, 0); }
-    }
-    #main { min-width: 0; }
-    #mobile-nav-toggle,
-    #mobile-nav-close,
-    #mobile-sidebar-backdrop { display: none; }
-    @media (max-width: 960px) {
-      #mobile-sidebar-backdrop {
-        display: block;
-        position: fixed;
-        inset: 0;
-        z-index: 240;
-        opacity: 0;
-        pointer-events: none;
-        background: color-mix(in srgb, var(--color-base) 78%, transparent);
-        backdrop-filter: blur(10px);
-        transition: opacity 0.22s ease;
-      }
-      #sidebar-shell {
-        position: fixed;
-        inset: 0 auto 0 0;
-        z-index: 260;
-        width: 100vw;
-        max-width: 100vw;
-        transform: translateX(calc(-100% - 16px));
-        transition: transform 0.24s ease;
-        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-      }
-      body.mobile-nav-open #sidebar-shell { transform: translateX(0); }
-      body.mobile-nav-open #mobile-sidebar-backdrop { opacity: 1; pointer-events: auto; }
-      #mobile-nav-toggle,
-      #mobile-nav-close {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-      }
-      #mobile-nav-close { opacity: 0; pointer-events: none; }
-      body.mobile-nav-open #mobile-nav-toggle { opacity: 0; pointer-events: none; }
-      body.mobile-nav-open #mobile-nav-close { opacity: 1; pointer-events: auto; }
-      #mobile-nav-toggle {
-        position: absolute;
-        top: max(12px, env(safe-area-inset-top));
-        left: 12px;
-        z-index: 220;
-        width: 40px;
-        height: 40px;
-        border-radius: 12px;
-        border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
-        background: color-mix(in srgb, var(--color-surface) 92%, transparent);
-        color: var(--color-text);
-        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
-        backdrop-filter: blur(10px);
-      }
-      #mobile-nav-close {
-        position: absolute;
-        top: max(12px, env(safe-area-inset-top));
-        right: 12px;
-        z-index: 1;
-        width: 36px;
-        height: 36px;
-        border-radius: 10px;
-        border: 1px solid color-mix(in srgb, var(--color-border) 68%, transparent);
-        background: color-mix(in srgb, var(--color-raised) 92%, transparent);
-        color: var(--color-text);
-      }
-      #nav-rail { width: 52px !important; min-width: 52px !important; padding-top: 56px; padding-bottom: 12px; }
-      #sidebar { width: auto !important; min-width: 0 !important; flex: 1 1 auto; padding-top: 52px; }
-      #plugin-toolbar { top: max(12px, env(safe-area-inset-top)); right: 12px; }
-      #empty img { width: 9rem; }
-      #empty p { max-width: 24ch; padding-inline: 1rem; }
-      #settings-overlay .settings-panel { padding: 4.5rem 1rem 1.5rem; max-width: none; }
-      #folder-picker { padding: 1rem; }
-      #folder-picker > div { width: 100%; max-width: 420px; }
-    }
-  </style>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+/* no-FOUC theme pre-stamp: resolve auto|light|dark and stamp <html> before first paint */
+(function(){try{var p=localStorage.getItem('clideck.theme');
+if(p!=='light'&&p!=='dark')p=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.setAttribute('data-theme',p);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
+/* no-flash sidebar-width pre-stamp (E1): apply the saved --sidebar-w before first paint */
+(function(){try{var w=parseInt(localStorage.getItem('clideck.sidebarW'),10);
+if(w>=240&&w<=560)document.documentElement.style.setProperty('--sidebar-w',w+'px');}catch(e){}})();
+</script>
+<title>CliDeck</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
+<link rel="stylesheet" href="/vendor/xterm.css">
+<link rel="stylesheet" href="/css/app.css">
 </head>
-<body class="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
-  <div id="mobile-sidebar-backdrop" aria-hidden="true"></div>
-
-  <div id="sidebar-shell">
-    <button id="mobile-nav-close" type="button" aria-label="Close sidebar">
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
-    </button>
-
-    <!-- Navigation Rail -->
-    <nav id="nav-rail" class="w-12 flex-shrink-0 bg-slate-900 border-r border-slate-700/50 flex flex-col items-center py-3 gap-1">
-    <button class="rail-btn relative w-9 h-9 flex items-center justify-center rounded-lg text-slate-200 bg-slate-800 transition-colors" data-panel="chats" title="Sessions">
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      <span id="rail-unread" class="hidden absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center" style="background:var(--color-rail-badge-bg);color:var(--color-rail-badge-text)"></span>
-    </button>
-    <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" data-panel="prompts" title="Prompt Library">
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-    </button>
-    <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" data-panel="plugins" title="Plugins">
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="3"/><path d="M12 8V6m0 12v-2M8 12H6m12 0h-2"/></svg>
-    </button>
-    <div class="flex-1"></div>
-    <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" id="btn-remote" title="Mobile Remote">
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-    </button>
-    <button class="theme-toggle rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" id="btn-theme-toggle" title="Toggle light/dark mode">
-      <svg class="icon-sun w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-      <svg class="icon-moon w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-    </button>
-    <button class="rail-btn w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 transition-colors" id="rail-settings" title="Settings">
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3c.4-1.7 2.9-1.7 3.4 0a1.7 1.7 0 0 0 2.6 1.1c1.5-.9 3.3.8 2.4 2.4a1.7 1.7 0 0 0 1 2.5c1.8.4 1.8 2.9 0 3.4a1.7 1.7 0 0 0-1 2.5c.9 1.6-.9 3.3-2.4 2.4a1.7 1.7 0 0 0-2.6 1c-.4 1.8-2.9 1.8-3.4 0a1.7 1.7 0 0 0-2.5-1.1c-1.6.9-3.3-.8-2.4-2.3a1.7 1.7 0 0 0-1.1-2.6c-1.7-.4-1.7-2.9 0-3.3a1.7 1.7 0 0 0 1.1-2.6c-.9-1.6.8-3.3 2.4-2.4 1 .6 2.3.1 2.5-1"/><circle cx="12" cy="12" r="3"/></svg>
-    </button>
-  </nav>
-
-  <!-- Sidebar -->
-  <aside id="sidebar" class="w-[354px] min-w-[354px] bg-slate-900 border-r border-slate-700/50 flex flex-col">
-    <!-- Chats panel -->
-    <div id="panel-chats" class="flex flex-col flex-1 min-h-0">
-      <div class="flex items-center justify-between px-3 pt-3 pb-2">
-        <span class="text-sm font-bold tracking-tight" style="font-family:'JetBrains Mono',monospace"><span style="color:var(--color-text)">cli</span><span style="color:var(--color-dim)">deck</span></span>
-        <div class="flex items-center gap-1">
-          <span id="save-indicator" class="save-indicator" title="Sessions saved">
-            <svg class="save-tick" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-            <svg class="save-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2a10 10 0 0 1 10 10"/></svg>
-            <svg class="save-offline" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v7"/><path d="M12 17h.01"/></svg>
-          </span>
-          <button class="icon-btn w-7 h-7 flex items-center justify-center rounded-md border border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-slate-200 transition-colors" id="btn-new-project" title="New project">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 11v6M9 14h6"/></svg>
-          </button>
-          <button class="icon-btn w-7 h-7 flex items-center justify-center rounded-md border border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-slate-200 transition-colors text-sm" id="btn-new" title="New session">+</button>
-        </div>
+<body>
+<!-- stale/outdated-engine banner — shown by ws.js after repeated instant socket closes (see store 'stale' event) -->
+<div class="engine-banner" id="engine-banner" role="alert" hidden>
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <span id="engine-banner-text"></span>
+</div>
+<div class="app">
+  <!-- ══════════ SIDEBAR ══════════ -->
+  <aside class="sidebar">
+    <div class="side-head">
+      <div class="brand"><div class="brand-mark"></div><div class="brand-name">clideck <span>v2</span></div></div>
+      <div class="head-actions">
+        <button class="proj-btn" id="proj-btn" title="New project" aria-label="New project">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+        </button>
+        <div class="new-wrap"><button class="new-btn" id="new-btn" title="New session">+</button></div>
       </div>
-      <div class="px-2.5 pb-2.5 flex flex-col gap-2">
-        <div class="relative">
-          <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input id="search-input" type="text" placeholder="Search" class="w-full pl-9 pr-9 py-[7px] text-[13px] bg-slate-800/50 rounded-full text-slate-300 placeholder-slate-600 outline-none border border-transparent focus:border-slate-600/60 focus:bg-slate-800/80 transition-all">
-          <button id="search-clear" class="hidden absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full border border-slate-700/40 bg-slate-800/40 text-slate-500 hover:text-slate-200 hover:bg-slate-700/60 transition-all flex items-center justify-center" title="Clear search" aria-label="Clear search">
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-          </button>
-        </div>
-        <div class="flex bg-slate-800/30 rounded-lg p-[3px]">
-          <button class="filter-tab flex-1 text-[11px] font-medium py-[5px] rounded-md transition-all bg-slate-700/60 text-slate-200" data-tab="all">All</button>
-          <button class="filter-tab flex-1 text-[11px] font-medium py-[5px] rounded-md transition-all text-slate-500 hover:text-slate-400 flex items-center justify-center gap-1" data-tab="unread" style="background:var(--color-filter-unread-bg)">
-            Unread
-            <span id="unread-badge" class="hidden min-w-[16px] h-4 px-1 rounded-full text-blue-400 text-[10px] font-semibold inline-flex items-center justify-center" style="background:var(--color-unread-pill-bg)">0</span>
-          </button>
-        </div>
-      </div>
-      <div id="session-list" class="tmx-scroll flex-1 overflow-y-auto border-t border-slate-700/50"></div>
     </div>
-    <!-- Prompts panel (rendered by prompts.js) -->
-    <div id="panel-prompts" class="hidden flex-col flex-1 min-h-0"></div>
-    <!-- Plugins panel -->
-    <div id="panel-plugins" class="hidden flex-col flex-1 min-h-0">
-      <div class="flex items-center px-4 py-3 border-b border-slate-700/50">
-        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Plugins</span>
-        <a href="https://clideck.dev/plugins" target="_blank" rel="noopener" class="ml-auto text-[11px] text-blue-400 hover:text-blue-300 transition-colors" title="Browse plugins">Get plugins &rarr;</a>
-      </div>
-      <div id="plugins-list" class="flex-1 overflow-y-auto py-2"></div>
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+      <input id="search" placeholder="Search sessions" autocomplete="off" spellcheck="false">
+      <button class="search-clear" id="search-clear" title="Clear search" aria-label="Clear search">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
     </div>
-    <!-- Settings panel (category nav in sidebar) -->
-    <div id="panel-settings" class="hidden flex-col flex-1 min-h-0">
-      <div class="px-4 py-3 border-b border-slate-700/50">
-        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Settings</span>
-      </div>
-      <div id="settings-nav" class="flex-1 overflow-y-auto pt-1">
-        <button class="settings-cat active-cat flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-slate-200 bg-slate-800/60 transition-colors" data-cat="general">
-          <svg class="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3c.4-1.7 2.9-1.7 3.4 0a1.7 1.7 0 0 0 2.6 1.1c1.5-.9 3.3.8 2.4 2.4a1.7 1.7 0 0 0 1 2.5c1.8.4 1.8 2.9 0 3.4a1.7 1.7 0 0 0-1 2.5c.9 1.6-.9 3.3-2.4 2.4a1.7 1.7 0 0 0-2.6 1c-.4 1.8-2.9 1.8-3.4 0a1.7 1.7 0 0 0-2.5-1.1c-1.6.9-3.3-.8-2.4-2.3a1.7 1.7 0 0 0-1.1-2.6c-1.7-.4-1.7-2.9 0-3.3a1.7 1.7 0 0 0 1.1-2.6c-.9-1.6.8-3.3 2.4-2.4 1 .6 2.3.1 2.5-1"/><circle cx="12" cy="12" r="3"/></svg>
-          General
-        </button>
-        <button class="settings-cat flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-slate-500 hover:text-slate-300 hover:bg-slate-800/30 transition-colors" data-cat="agents">
-          <svg class="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 10l2 2 4-4"/></svg>
-          CLI Agents
-        </button>
-        <button class="settings-cat flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-slate-500 hover:text-slate-300 hover:bg-slate-800/30 transition-colors" data-cat="notifications">
-          <svg class="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          Notifications
-        </button>
-        <button class="settings-cat flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-sm text-slate-500 hover:text-slate-300 hover:bg-slate-800/30 transition-colors" data-cat="appearance">
-          <svg class="w-4 h-4 flex-shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 0 0 20 4 4 0 0 1 0-8 4 4 0 0 0 0-8"/><circle cx="12" cy="9" r="1.5" fill="currentColor"/></svg>
-          Appearance
-        </button>
-      </div>
-      <div id="version-footer" class="flex flex-col items-center px-4 py-4 border-t border-slate-700/50">
-        <img src="/img/clideck-logo-terminal-panel.png" alt="CliDeck" style="width:24px;height:24px" class="opacity-30 mb-2" draggable="false">
-        <div class="text-[10px] leading-relaxed text-center space-y-px">
-          <div class="text-slate-600">clideck version: <span id="version-clideck" class="text-slate-500"></span></div>
-          <div class="text-slate-600">clideck remote version: <span id="version-remote" class="text-slate-500"></span></div>
-        </div>
-      </div>
+    <div class="tabs">
+      <div class="tab on" id="tab-all">All</div>
+      <div class="tab" id="tab-unread">Unread <span class="cnt zero" id="unread-cnt">0</span></div>
+    </div>
+    <div class="list" id="list">
+      <div class="list-empty" id="list-empty">Connecting to the engine…</div>
+    </div>
+    <div class="side-foot">
+      <!-- Neutral until the About me profile names someone: sidebar.js repaints both on every config. -->
+      <div class="av">y</div><span class="who">You · local</span>
+      <span class="conn down" id="conn"><i></i><span id="conn-text">offline</span></span>
+      <span class="save-ind" id="save-ind" title="Sessions saved" aria-hidden="true">
+        <svg class="si-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>
+        <svg class="si-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        <svg class="si-off" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+      </span>
+      <button class="foot-btn" id="prompts-btn" title="Prompt library — type // in any terminal" aria-label="Prompt library">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h8"/><path d="M7 13h5"/></svg>
+      </button>
+      <button class="foot-btn" id="notify-btn" title="Notifications on — click to turn off" aria-label="Turn notifications off" aria-pressed="true">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><g class="notify-bell"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.5 21a1.7 1.7 0 0 1-3 0"/></g><path class="notify-slash" d="M4 4l16 16"/></svg>
+      </button>
+      <button class="foot-btn" id="settings-btn" title="Settings" aria-label="Settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button class="theme-btn" id="theme-btn" title="Theme" aria-label="Theme">◐</button>
     </div>
   </aside>
-  </div>
 
-  <!-- Main -->
-  <main id="main" class="flex-1 flex relative">
-    <button id="mobile-nav-toggle" type="button" aria-label="Open sidebar">
-      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-    </button>
-    <div id="terminals" class="absolute inset-0" style="pointer-events:none"></div>
-    <div id="plugin-toolbar" class="absolute top-2 right-3 z-10 flex gap-1.5 empty:hidden"></div>
-    <div id="empty" class="absolute inset-0 flex flex-col items-center justify-center select-none">
-      <img src="/img/clideck-logo-terminal-panel.png" alt="CliDeck" class="w-44 opacity-60 mb-5" draggable="false">
-      <p class="text-slate-500 text-[13px] leading-relaxed text-center">Press <kbd class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px] font-mono">+</kbd> to start a new session<br>or resume a previous one from the sidebar</p>
+  <!-- E1: drag handle on the sidebar/terminal divider — resize (persisted) · double-click resets -->
+  <div class="resize-handle" id="resize-handle" aria-label="Resize sidebar"></div>
+
+  <!-- ══════════ RIGHT PANE ══════════ -->
+  <main class="main">
+    <div class="rp-empty" id="rp-empty">
+      <div>
+        <div class="mk"></div>
+        <div class="big" id="rp-empty-big">Connecting to the engine…</div>
+        <div id="rp-empty-sub">Live sessions will appear on the left.</div>
+      </div>
     </div>
 
-    <!-- Settings overlay (content panels only — category nav is in sidebar panel-settings) -->
-    <div id="settings-overlay" class="absolute inset-0 z-[200] bg-slate-950 hidden overflow-y-auto">
-
-      <!-- General -->
-      <div id="settings-general" class="settings-panel p-6 max-w-xl">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-4">General</h3>
-        <div class="mb-5">
-          <label class="block text-xs text-slate-400 mb-1.5">Default working directory</label>
-          <div class="flex gap-2">
-            <input type="text" id="cfg-default-path" placeholder="/Users/you/projects"
-              class="flex-1 px-3 py-2 text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-colors">
-            <button class="px-3 py-2 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" id="btn-browse-path">Browse</button>
-          </div>
-        </div>
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 mt-8">Behavior</h3>
-        <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-          <input type="checkbox" id="cfg-confirm-close" name="cfg-confirm-close" class="accent-blue-500">
-          Confirm before closing a session
-        </label>
-      </div>
-
-      <!-- CLI Agents -->
-      <div id="settings-agents" class="settings-panel hidden p-6 max-w-2xl">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500">CLI Agents</h3>
-          <button class="px-3 py-1.5 text-xs bg-slate-800 border border-slate-600 rounded-md text-slate-300 hover:bg-slate-700 transition-colors" id="btn-add-agent">+ Add agent</button>
-        </div>
-        <div id="agent-list" class="space-y-3"></div>
-      </div>
-
-      <!-- Notifications -->
-      <div id="settings-notifications" class="settings-panel hidden p-6 max-w-xl">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-4">Notifications</h3>
-        <div class="mb-5">
-          <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-            <input type="checkbox" id="cfg-notify-idle" name="cfg-notify-idle" class="accent-blue-500">
-            Notify when an agent finishes working
-            <span id="notify-permission-status" class="hidden text-[11px] ml-auto"></span>
-          </label>
-          <p class="text-xs text-slate-500 mt-1.5 ml-6">Get a browser notification when a session goes from working to idle</p>
-        </div>
-        <div class="mb-5">
-          <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-            <input type="checkbox" id="cfg-notify-sound" name="cfg-notify-sound" class="accent-blue-500" checked>
-            Play sound when an agent finishes working
-          </label>
-          <p class="text-xs text-slate-500 mt-1.5 ml-6">Audio beep on working-to-idle transitions</p>
-        </div>
-        <div id="notify-sound-row" class="mb-5 ml-6">
-          <label class="block text-xs text-slate-400 mb-1.5">Notification sound</label>
-          <div class="flex items-center gap-2">
-            <select id="cfg-notify-sound-pick" class="flex-1 px-3 py-1.5 text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 outline-none focus:border-blue-500 transition-colors cursor-pointer">
-              <option value="default-beep">Default</option>
-              <option value="soft-beep">Soft</option>
-              <option value="bold-beep-idle">Bold</option>
-              <option value="echo-beep-idle">Echo</option>
-              <option value="musical-beep-idle">Musical</option>
-              <option value="small-bleep-idle">Bleep</option>
-              <option value="space-idle">Space</option>
-            </select>
-            <button id="btn-sound-preview" class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-md border border-slate-600 text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors" title="Preview sound">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-            </button>
-          </div>
-        </div>
-        <div class="mb-5">
-          <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-            <input type="checkbox" id="cfg-ask-dispatch-sound" name="cfg-ask-dispatch-sound" class="accent-blue-500" checked>
-            Play sound when an agent dispatches another agent
-          </label>
-          <p class="text-xs text-slate-500 mt-1.5 ml-6">Soft ambient cue when `clideck ask` sends work into another session</p>
-        </div>
-        <div id="ask-dispatch-sound-row" class="mb-5 ml-6">
-          <label class="block text-xs text-slate-400 mb-1.5">Dispatch sound</label>
-          <div class="flex items-center gap-2">
-            <select id="cfg-ask-dispatch-sound-pick" class="flex-1 px-3 py-1.5 text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 outline-none focus:border-blue-500 transition-colors cursor-pointer">
-              <option value="agent-dispatch-ambient">Ambient dispatch</option>
-              <option value="agent-dispatch-soft">Soft dispatch</option>
-            </select>
-            <button id="btn-ask-dispatch-sound-preview" class="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-md border border-slate-600 text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors" title="Preview dispatch sound">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-            </button>
-          </div>
-        </div>
-        <div class="mb-5">
-          <label class="block text-xs text-slate-400 mb-1.5 ml-6">Minimum working time before notifying</label>
-          <select id="cfg-notify-min-work" class="ml-6 px-3 py-1.5 text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 outline-none focus:border-blue-500 transition-colors cursor-pointer">
-            <option value="0" selected>Always</option>
-            <option value="10">10 seconds</option>
-            <option value="30">30 seconds</option>
-          </select>
-        </div>
-        <div class="mt-6 px-4 py-3 rounded-lg bg-slate-800/50 border border-slate-700/40">
-          <p class="text-[11px] font-medium text-slate-400 mb-1.5">When do notifications fire?</p>
-          <div class="text-[11px] text-slate-500 leading-relaxed space-y-1">
-            <p><span class="text-slate-400">Sound</span> — plays for background sessions. If you're viewing the session, no sound.</p>
-            <p><span class="text-slate-400">Dispatch</span> — plays when `clideck ask` sends work into another agent.</p>
-            <p><span class="text-slate-400">Browser</span> — only when the CliDeck tab is not in focus.</p>
-            <p><span class="text-slate-400">Mute</span> — right-click a session to mute notifications and dispatch cues for it.</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Appearance -->
-      <div id="settings-appearance" class="settings-panel hidden p-6 max-w-xl">
-        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-4">Appearance</h3>
-        <div class="mb-5">
-          <label class="block text-xs text-slate-400 mb-1.5">Default terminal theme</label>
-          <input type="hidden" id="cfg-default-theme" name="cfg-default-theme" value="default">
-          <button type="button" id="default-theme-trigger" class="w-full px-3 py-2 text-sm bg-slate-800 border border-slate-600 rounded-md text-slate-200 text-left flex items-center justify-between outline-none hover:border-slate-500 transition-colors cursor-pointer">
-            <span id="default-theme-label" class="theme-label truncate">Default</span>
-            <span class="text-slate-500 text-xs ml-2">&#9662;</span>
+    <section class="rp hidden" id="rp">
+      <header class="term-head" id="term-head">
+        <div class="th-id">
+          <div class="th-avatar" id="th-avatar"></div>
+          <div class="th-name" id="th-name" role="button" tabindex="0" title="Copy ask address">Claude</div>
+          <button class="th-rename" id="th-rename" title="Rename session" aria-label="Rename session">
+            <svg class="th-ic pencil" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3z"/><path d="M13.5 6.5l3 3"/></svg>
+            <svg class="th-ic cancel" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
           </button>
-          <div id="default-theme-preview" class="mt-2 rounded-md overflow-hidden text-[11px] font-mono leading-[1.45] whitespace-pre"></div>
+          <div class="th-rename-msg" id="th-rename-msg" role="status" hidden></div>
         </div>
-      </div>
-
-    </div>
-
-    <!-- Remote modal -->
-    <div id="remote-modal" class="absolute inset-0 z-[260] bg-black/60 backdrop-blur-sm hidden items-center justify-center">
-      <div style="background:var(--color-dialog);border:1px solid color-mix(in srgb, var(--color-muted) 40%, transparent);box-shadow:0 25px 60px -12px var(--color-shadow)" class="rounded-2xl w-[340px] flex flex-col overflow-hidden">
-        <div class="px-5 py-3.5 flex items-center justify-between">
-          <span id="remote-modal-title" class="text-[13px] font-semibold text-slate-200">Mobile Remote</span>
-          <button id="remote-close" class="w-6 h-6 flex items-center justify-center rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 transition-colors">
-            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        <div class="th-spacer"></div>
+        <div class="th-insights" role="group" aria-label="Session telemetry">
+          <div class="tb-status th-pill st-closed" id="th-chip"><span class="dot offline"></span> <span>—</span></div>
+          <div class="th-context th-pill" id="th-context" role="meter" aria-valuemin="0" aria-valuemax="100" hidden>
+            <span class="th-context-track" aria-hidden="true"><i id="th-context-fill"></i></span>
+            <span class="th-context-value" id="th-context-value"></span>
+          </div>
+          <div class="th-model" id="th-model"></div>
+          <div class="th-last th-pill" id="th-last" hidden>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            <span id="th-last-value"></span>
+          </div>
+          <div class="th-meta" id="th-meta"></div>
+        </div>
+        <div class="th-div" aria-hidden="true"></div>
+        <div class="th-actions">
+          <button class="th-history" id="th-history" title="Conversation history" aria-label="Conversation history">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+          </button>
+          <button class="th-voice" id="voice-mic" title="Voice input" aria-label="Voice input" aria-pressed="false">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg>
+          </button>
+          <button class="th-voice" id="voice-say" title="Read completed replies aloud" aria-label="Toggle Supertonic auto-read" aria-pressed="false">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+          </button>
+          <button class="th-plugin" id="plugin-actions" title="Plugin actions" aria-label="Plugin actions" aria-haspopup="menu" aria-expanded="false" hidden>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></svg>
           </button>
         </div>
-
-        <!-- Intro (not installed) -->
-        <div id="remote-intro" class="hidden px-6 py-6 flex flex-col items-center gap-4">
-          <svg class="w-12 h-12 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-          <h3 id="remote-intro-title" class="text-[13px] font-semibold text-slate-200">CliDeck Mobile Remote</h3>
-          <p id="remote-intro-text" class="text-xs text-slate-400 text-center leading-relaxed">Control your AI agents from your phone. See live status, send messages, and get notifications — all end-to-end encrypted.</p>
-          <button id="remote-add" class="mt-1 w-full px-4 py-2.5 text-[13px] font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">Add to CliDeck</button>
-          <p id="remote-intro-foot" class="text-[11px] text-slate-600 text-center">Installs the <code class="text-slate-500">clideck-remote</code> package via npm</p>
-        </div>
-
-        <!-- Installing -->
-        <div id="remote-installing" class="hidden px-5 py-4 flex flex-col gap-3">
-          <div class="flex items-center gap-2">
-            <svg class="w-4 h-4 animate-spin text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 0 1 10 10"/></svg>
-            <span class="text-xs text-slate-300">Installing clideck-remote…</span>
-          </div>
-          <pre id="remote-install-log" class="max-h-[160px] overflow-y-auto px-3 py-2 bg-slate-900/70 rounded-lg border border-slate-700/40 text-[11px] text-slate-400 font-mono leading-relaxed whitespace-pre-wrap"></pre>
-        </div>
-
-        <!-- Connecting -->
-        <div id="remote-connecting" class="hidden px-5 py-6 flex flex-col items-center gap-2">
-          <svg class="w-6 h-6 animate-spin text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2a10 10 0 0 1 10 10"/></svg>
-          <span class="text-xs text-slate-400">Connecting to relay…</span>
-        </div>
-
-        <!-- QR / waiting for phone -->
-        <div id="remote-qr" class="hidden flex flex-col items-center w-full">
-          <div id="remote-url-box" class="hidden"></div>
-          <div class="py-6 px-6 flex flex-col items-center w-full">
-            <p class="text-sm font-medium text-slate-300 mb-4">Scan with your phone</p>
-            <img id="remote-qr-img" class="w-[180px] h-[180px] rounded-2xl hidden" alt="QR code" style="padding:12px;background:white">
-            <p class="mt-4 text-xs text-slate-400">or <button id="remote-copy" class="font-semibold underline underline-offset-2 text-slate-300 hover:text-slate-200 transition-colors">copy the link</button> to open on your device</p>
-            <div class="mt-5 w-full px-4 py-3 rounded-lg text-center" style="background:color-mix(in srgb, var(--color-surface) 70%, transparent)">
-              <span class="text-[11px] text-slate-500">Access all sessions from your phone</span>
-            </div>
-            <button id="remote-disconnect" class="mt-3 w-full py-2 text-[11px] text-slate-500 hover:text-slate-400 transition-colors">Disconnect</button>
-          </div>
-          <div class="w-full border-t border-slate-700/40 px-6 py-3 flex items-center justify-center gap-1.5 text-slate-400">
-            <svg class="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            <span class="text-[11px] font-medium">Your sessions are end-to-end encrypted</span>
-          </div>
-        </div>
-
-        <!-- Paired / active -->
-        <div id="remote-active" class="hidden flex flex-col items-center w-full">
-          <div class="py-6 px-6 flex flex-col items-center w-full gap-4">
-            <div class="flex items-center gap-2 text-emerald-400">
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
-              <span class="text-[13px] font-medium">Connected</span>
-            </div>
-            <p id="remote-device-info" class="text-[11px] text-slate-500 -mt-2"></p>
-
-            <div id="remote-stats" class="w-full grid grid-cols-2 gap-2 text-center">
-              <div class="px-3 py-2.5 rounded-lg" style="background:color-mix(in srgb, var(--color-surface) 70%, transparent)">
-                <div id="remote-stat-time" class="text-sm font-mono text-slate-200">0:00</div>
-                <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Connected</div>
-              </div>
-              <div class="px-3 py-2.5 rounded-lg" style="background:color-mix(in srgb, var(--color-surface) 70%, transparent)">
-                <div id="remote-stat-sessions" class="text-sm font-mono text-slate-200">0</div>
-                <div class="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">Sessions</div>
-              </div>
-            </div>
-
-            <button id="remote-disconnect2" class="w-full py-2.5 text-[11px] font-medium text-red-400 hover:text-red-300 rounded-lg transition-colors" style="background:color-mix(in srgb, var(--color-surface) 70%, transparent)">Disconnect</button>
-          </div>
-          <div class="w-full border-t border-slate-700/40 px-6 py-3 flex items-center justify-between">
-            <div class="flex items-center gap-1.5 text-emerald-500/70">
-              <svg class="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <span class="text-[11px]">End-to-end encrypted</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Error -->
-        <div id="remote-error" class="hidden px-5 py-4 flex flex-col items-center gap-3">
-          <p id="remote-error-text" class="text-xs text-red-400 text-center"></p>
-          <button id="remote-error-dismiss" class="px-4 py-2 text-xs text-slate-400 hover:text-slate-300 transition-colors">Close</button>
-        </div>
+      </header>
+      <div class="cd-tabs" id="pane-tabs" role="tablist"></div>
+      <div class="pane-body" id="pane-body">
+      <div class="term-frame" id="term-panel" role="tabpanel">
+        <div id="term"></div>
+        <button class="scroll-btn" id="scroll-btn" title="Jump to latest" aria-label="Jump to latest">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
       </div>
-    </div>
-
-    <!-- Confirmation dialog -->
-    <div id="confirm-close" class="absolute inset-0 z-[250] bg-black/60 backdrop-blur-sm hidden items-center justify-center">
-      <div class="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl shadow-black/50 w-80 flex flex-col">
-        <div id="cc-message" class="px-5 py-4 text-sm">Close this session? The terminal process will be killed.</div>
-        <div class="px-4 py-3 border-t border-slate-700 flex justify-end gap-2">
-          <button id="cc-cancel" class="px-3 py-1.5 text-xs rounded-md border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">Cancel</button>
-          <button id="cc-confirm" class="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-500 transition-colors">Delete</button>
-        </div>
       </div>
-    </div>
-
-    <!-- Folder picker -->
-    <div id="folder-picker" class="absolute inset-0 z-[300] bg-black/60 backdrop-blur-sm hidden items-center justify-center">
-      <div class="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl shadow-black/50 w-[420px] max-h-[460px] flex flex-col">
-        <div class="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
-          <span class="text-sm font-semibold">Choose Directory</span>
-          <div class="flex items-center gap-2">
-            <button id="fp-new-folder" class="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors" title="New folder">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            </button>
-            <button id="fp-toggle-hidden" class="p-1 rounded hover:bg-slate-700 text-slate-500 transition-colors" title="Show hidden files">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
-          </div>
-        </div>
-        <div id="fp-path" class="px-4 py-2 text-xs text-slate-400 border-b border-slate-700 break-all"></div>
-        <div id="fp-listing" class="flex-1 overflow-y-auto py-1 min-h-[200px]"></div>
-        <div class="px-4 py-3 border-t border-slate-700 flex justify-end gap-2">
-          <button id="fp-cancel" class="px-3 py-1.5 text-xs rounded-md border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">Cancel</button>
-          <button id="fp-select" class="px-3 py-1.5 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-500 transition-colors disabled:bg-slate-600 disabled:text-slate-400 disabled:cursor-not-allowed">Select</button>
-        </div>
-      </div>
-    </div>
+    </section>
   </main>
+</div>
+<!-- toasts mount into a lazily-created .toaster container (public/js/ui/toast.js) -->
 
-  <script src="/xterm.js"></script>
-  <script src="/addon-fit.js"></script>
-  <script type="module" src="/js/app.js"></script>
+<!-- xterm 6 UMD (sets window.Terminal), then the ES-module app -->
+<script src="/vendor/xterm.js"></script>
+<script type="module" src="/js/app.js"></script>
 </body>
 </html>

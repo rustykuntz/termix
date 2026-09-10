@@ -1,20 +1,3 @@
 node_modules/
-
-# Local app state
-config.json
-sessions.json
-data/
-
-# Logs
 *.log
-npm-debug.log*
-
-# OS files
 .DS_Store
-
-# cli agents
-.claude
-.clideck
-
-# Work planning
-workplan.txt

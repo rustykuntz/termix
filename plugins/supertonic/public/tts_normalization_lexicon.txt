@@ -1,0 +1,521 @@
+# input | replacement | language
+# Longest valid match wins. Word boundaries are enforced for word-like edges.
+
+# Lettered list labels
+a) | A | english
+b) | B | english
+c) | C | english
+d) | D | english
+e) | E | english
+f) | F | english
+g) | G | english
+h) | H | english
+i) | I | english
+j) | J | english
+k) | K | english
+l) | L | english
+m) | M | english
+n) | N | english
+o) | O | english
+p) | P | english
+q) | Q | english
+r) | R | english
+s) | S | english
+t) | T | english
+u) | U | english
+v) | V | english
+w) | W | english
+x) | X | english
+y) | Y | english
+z) | Z | english
+
+# Symbols and operators
+~ | roughly | english
+≈ | approximately | english
+≃ | approximately | english
+≅ | approximately equal to | english
+== | equals | english
+!= | does not equal | english
+≠ | does not equal | english
+<= | less than or equal to | english
+>= | greater than or equal to | english
+≤ | less than or equal to | english
+≥ | greater than or equal to | english
+= | equals | english
+< | less than | english
+> | greater than | english
++ | plus | english
+± | plus or minus | english
+× | times | english
+✕ | times | english
+÷ | divided by | english
+∞ | infinity | english
+√ | square root of | english
+∑ | sum | english
+∏ | product | english
+∆ | delta | english
+Δ | delta | english
+π | pi | english
+∝ | proportional to | english
+∴ | therefore | english
+∵ | because | english
+-> | to | english
+→ | to | english
+=> | implies | english
+⇒ | implies | english
+← | from | english
+↔ | both ways | english
+↑ | up | english
+↓ | down | english
+& | and | english
++ve | positive | english
+-ve | negative | english
+
+# Fractions
+½ | one half | english
+⅓ | one third | english
+⅔ | two thirds | english
+¼ | one quarter | english
+¾ | three quarters | english
+⅕ | one fifth | english
+⅖ | two fifths | english
+⅗ | three fifths | english
+⅘ | four fifths | english
+⅙ | one sixth | english
+⅚ | five sixths | english
+⅛ | one eighth | english
+⅜ | three eighths | english
+⅝ | five eighths | english
+⅞ | seven eighths | english
+
+# Common abbreviations
+e.g. | for example | english
+eg. | for example | english
+e.g | for example | english
+i.e. | that is | english
+ie. | that is | english
+i.e | that is | english
+etc. | et cetera | english
+etc | et cetera | english
+vs. | versus | english
+vs | versus | english
+approx. | approximately | english
+approx | approximately | english
+avg. | average | english
+avg | average | english
+min. | minimum | english
+max. | maximum | english
+misc. | miscellaneous | english
+info. | information | english
+incl. | including | english
+excl. | excluding | english
+est. | estimated | english
+qty. | quantity | english
+dept. | department | english
+ref. | reference | english
+temp. | temperature | english
+vol. | volume | english
+no. | number | english
+num. | number | english
+w/ | with | english
+w/o | without | english
+b/c | because | english
+aka | also known as | english
+AKA | also known as | english
+pls | please | english
+plz | please | english
+thx | thanks | english
+ty | thank you | english
+TY | thank you | english
+btw | by the way | english
+BTW | by the way | english
+imo | in my opinion | english
+IMO | in my opinion | english
+imho | in my humble opinion | english
+IMHO | in my humble opinion | english
+FYI | for your information | english
+ASAP | as soon as possible | english
+TBD | to be determined | english
+TBA | to be announced | english
+N/A | not applicable | english
+n/a | not applicable | english
+NA | not applicable | english
+RSVP | R S V P | english
+
+# Uppercase words that should remain words
+GO | go | english
+STOP | stop | english
+START | start | english
+END | end | english
+YES | yes | english
+NO | no | english
+ON | on | english
+OFF | off | english
+UP | up | english
+DOWN | down | english
+LEFT | left | english
+RIGHT | right | english
+OPEN | open | english
+CLOSE | close | english
+CLOSED | closed | english
+ENTER | enter | english
+EXIT | exit | english
+NEXT | next | english
+BACK | back | english
+CONTINUE | continue | english
+CANCEL | cancel | english
+WARNING | warning | english
+ERROR | error | english
+FAILED | failed | english
+SUCCESS | success | english
+READY | ready | english
+DONE | done | english
+TRUE | true | english
+FALSE | false | english
+HIGH | high | english
+LOW | low | english
+BUY | buy | english
+SELL | sell | english
+LONG | long | english
+SHORT | short | english
+HOLD | hold | english
+WAIT | wait | english
+NOW | now | english
+TODAY | today | english
+TOMORROW | tomorrow | english
+YESTERDAY | yesterday | english
+OK | okay | english
+OKAY | okay | english
+HELLO | hello | english
+THANKS | thanks | english
+
+# Acronyms and established pronunciations
+AI | A I | english
+AGI | A G I | english
+API | A P I | english
+SDK | S D K | english
+CLI | C L I | english
+GUI | G U I | english
+UI | U I | english
+UX | U X | english
+TTS | T T S | english
+STT | S T T | english
+LLMs | L L Ms | english
+LLM | L L M | english
+ML | M L | english
+CPU | C P U | english
+GPUs | G P Us | english
+GPU | G P U | english
+TPU | T P U | english
+NPU | N P U | english
+SSD | S S D | english
+HDD | H D D | english
+USB | U S B | english
+HDMI | H D M I | english
+PCI-E | P C I E | english
+PCIe | P C I E | english
+NVMe | N V M E | english
+DDR | D D R | english
+VRAM | V ram | english
+RAM | ram | english
+BIOS | bye oss | english
+URL | U R L | english
+URI | U R I | english
+HTTPS | H T T P S | english
+HTTP | H T T P | english
+HTML | H T M L | english
+CSS | C S S | english
+XML | X M L | english
+CSV | C S V | english
+PDF | P D F | english
+JPG | J P G | english
+JPEG | J peg | english
+PNG | P N G | english
+SVG | S V G | english
+GIF | gif | english
+JSON | jay son | english
+YAML | yam el | english
+SQL | S Q L | english
+SSH | S S H | english
+SSL | S S L | english
+TLS | T L S | english
+TCP | T C P | english
+UDP | U D P | english
+IP | I P | english
+DNS | D N S | english
+VPN | V P N | english
+CDN | C D N | english
+GPS | G P S | english
+Wi-Fi | why fi | english
+WiFi | why fi | english
+RFID | R F I D | english
+NFC | N F C | english
+QR | Q R | english
+SMS | S M S | english
+MMS | M M S | english
+SIM | sim | english
+eSIM | E sim | english
+CEO | C E O | english
+CFO | C F O | english
+CTO | C T O | english
+COO | C O O | english
+CIO | C I O | english
+VP | V P | english
+HR | H R | english
+PR | P R | english
+R&D | R and D | english
+FAQs | F A Qs | english
+FAQ | F A Q | english
+DIY | D I Y | english
+ETA | E T A | english
+PIN | pin | english
+IDs | I Ds | english
+ID | I D | english
+Ids | I Ds | english
+Id | I D | english
+ids | I Ds | english
+id | I D | english
+IQ | I Q | english
+DNA | D N A | english
+RNA | R N A | english
+mRNA | M R N A | english
+MRI | M R I | english
+CT | C T | english
+ECG | E C G | english
+ICU | I C U | english
+FDA | F D A | english
+WHO | W H O | english
+USA | U S A | english
+US | U S | english
+UK | U K | english
+EU | E U | english
+UAE | U A E | english
+UN | U N | english
+NATO | nay toe | english
+NASA | nasa | english
+FBI | F B I | english
+CIA | C I A | english
+IRS | I R S | english
+GDP | G D P | english
+CPI | C P I | english
+PPI | P P I | english
+ROI | R O I | english
+P&L | P and L | english
+IPO | I P O | english
+ETF | E T F | english
+EPS | E P S | english
+P/E | P E | english
+PE | P E | english
+
+# AI and GPU terms
+NVIDIA | Nvidia | english
+AMD | A M D | english
+RTX | R T X | english
+GTX | G T X | english
+CUDA | cooda | english
+FP4 | F P four | english
+FP8 | F P eight | english
+FP16 | F P sixteen | english
+FP32 | F P thirty two | english
+BF16 | B F sixteen | english
+INT4 | int four | english
+INT8 | int eight | english
+INT16 | int sixteen | english
+INT32 | int thirty two | english
+TF32 | T F thirty two | english
+W4A4 | W four A four | english
+W4A8 | W four A eight | english
+W8A8 | W eight A eight | english
+MoE | mixture of experts | english
+MTP | M T P | english
+KV-cache | K V cache | english
+KV | K V | english
+FLOPS | flops | english
+TFLOPS | teraflops | english
+TOPS | tops | english
+
+# Storage and data units
+KB/s | kilobytes per second | english
+MB/s | megabytes per second | english
+GB/s | gigabytes per second | english
+TB/s | terabytes per second | english
+Kbps | kilobits per second | english
+Mbps | megabits per second | english
+Gbps | gigabits per second | english
+Tbps | terabits per second | english
+KiB | kibibytes | english
+MiB | mebibytes | english
+GiB | gibibytes | english
+TiB | tebibytes | english
+KB | kilobytes | english
+MB | megabytes | english
+GB | gigabytes | english
+TB | terabytes | english
+PB | petabytes | english
+Kb | kilobits | english
+Mb | megabits | english
+Gb | gigabits | english
+Tb | terabits | english
+
+# Distance, size, weight, electricity and hardware
+km/hr | kilometers per hour | english
+km/h | kilometers per hour | english
+kph | kilometers per hour | english
+mph | miles per hour | english
+m/s | meters per second | english
+m² | square meters | english
+m2 | square meters | english
+km² | square kilometers | english
+km2 | square kilometers | english
+cm² | square centimeters | english
+ft² | square feet | english
+ft2 | square feet | english
+sq. ft. | square feet | english
+sq ft | square feet | english
+sq. m. | square meters | english
+sq m | square meters | english
+mm | millimeters | english
+cm | centimeters | english
+km | kilometers | english
+mg | milligrams | english
+kg | kilograms | english
+oz | ounces | english
+lbs | pounds | english
+lb | pounds | english
+mV | millivolts | english
+kV | kilovolts | english
+mA | milliamps | english
+kA | kiloamps | english
+mAh | milliamp hours | english
+Ah | amp hours | english
+mW | milliwatts | english
+kW | kilowatts | english
+MW | megawatts | english
+Wh | watt hours | english
+kWh | kilowatt hours | english
+MHz | megahertz | english
+GHz | gigahertz | english
+THz | terahertz | english
+kHz | kilohertz | english
+Hz | hertz | english
+rpm | R P M | english
+RPM | R P M | english
+fps | frames per second | english
+FPS | frames per second | english
+
+# Temperature, percentage and time
+°C | degrees Celsius | english
+ºC | degrees Celsius | english
+°F | degrees Fahrenheit | english
+ºF | degrees Fahrenheit | english
+°K | degrees Kelvin | english
+% | percent | english
+pct. | percent | english
+pct | percent | english
+a.m. | A M | english
+p.m. | P M | english
+AM | A M | english
+PM | P M | english
+UTC | U T C | english
+GMT | G M T | english
+EST | E S T | english
+EDT | E D T | english
+CST | C S T | english
+CDT | C D T | english
+MST | M S T | english
+MDT | M D T | english
+PST | P S T | english
+PDT | P D T | english
+sec. | seconds | english
+secs | seconds | english
+mins | minutes | english
+hrs | hours | english
+hr | hour | english
+
+# Web and internet
+www. | W W W dot | english
+.co.uk | dot co dot U K | english
+.co.th | dot co dot T H | english
+.com | dot com | english
+.net | dot net | english
+.org | dot org | english
+.io | dot I O | english
+.ai | dot A I | english
+.co | dot co | english
+.edu | dot E D U | english
+.gov | dot gov | english
+.uk | dot U K | english
+.us | dot U S | english
+.ca | dot C A | english
+.au | dot A U | english
+.th | dot T H | english
+
+# Conversational shorthand
+lol | laugh out loud | english
+LOL | laugh out loud | english
+omg | oh my god | english
+OMG | oh my god | english
+idk | I don't know | english
+IDK | I don't know | english
+ikr | I know right | english
+IKR | I know right | english
+brb | be right back | english
+BRB | be right back | english
+ttyl | talk to you later | english
+TTYL | talk to you later | english
+rn | right now | english
+IRL | in real life | english
+irl | in real life | english
+DMs | D Ms | english
+DM | D M | english
+
+# Ordinals
+1st | first | english
+2nd | second | english
+3rd | third | english
+4th | fourth | english
+5th | fifth | english
+6th | sixth | english
+7th | seventh | english
+8th | eighth | english
+9th | ninth | english
+10th | tenth | english
+11th | eleventh | english
+12th | twelfth | english
+13th | thirteenth | english
+14th | fourteenth | english
+15th | fifteenth | english
+16th | sixteenth | english
+17th | seventeenth | english
+18th | eighteenth | english
+19th | nineteenth | english
+20th | twentieth | english
+21st | twenty first | english
+22nd | twenty second | english
+23rd | twenty third | english
+24th | twenty fourth | english
+25th | twenty fifth | english
+26th | twenty sixth | english
+27th | twenty seventh | english
+28th | twenty eighth | english
+29th | twenty ninth | english
+30th | thirtieth | english
+31st | thirty first | english
+
+# Unicode typography cleanup
+… | ... | english
+– | - | english
+— | - | english
+− | - | english
+“ | " | english
+” | " | english
+„ | " | english
+‘ | ' | english
+’ | ' | english
+• | , | english
+· | , | english
+‧ | , | english
+© | copyright | english
+® | registered | english
+™ | trademark | english
+№ | number | english
