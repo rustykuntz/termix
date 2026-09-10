@@ -26,7 +26,7 @@ function usage(pluginCommands = []) {
     '  clideck plugin validate <folder> [--json]',
     '  clideck [--url <url>] <plugin-id>/<command> [arguments]',
     '',
-    'Start opens the local engine at http://127.0.0.1:4100; CLIDECK_PORT overrides the default port.',
+    'Running clideck starts the local engine on port 4000; --port, CLIDECK_PORT, or PORT overrides it.',
     'Agents lists current-project sessions, including dormant (stopped) ones; --all groups every project.',
     'Use current addresses from agents, not old handoffs. last-active is recorded activity, not a shutdown time.',
     'Normal asks require an idle target and wait for its answer.',
@@ -52,7 +52,7 @@ function parseDuration(value) {
 }
 
 function defaultUrl(env) {
-  return env.CLIDECK_URL || `http://127.0.0.1:${env.CLIDECK_PORT || 4100}`;
+  return env.CLIDECK_URL || `http://127.0.0.1:${env.CLIDECK_PORT || env.PORT || 4000}`;
 }
 
 function parseOptions(
@@ -528,7 +528,7 @@ async function runAnnotate(args, env, io) {
 }
 
 async function run(args, env = process.env, io = process) {
-  if (args.length === 0 || ['--port', '--host', '--data-dir', '--cwd', '--command'].includes(args[0])) {
+  if (args.length === 0 || ['--port', '--host', '--data-dir', '--cwd', '--command'].includes(args[0].split('=')[0])) {
     return require('./server').main(args, env);
   }
   if (args.length === 1 && ['--version', '-v'].includes(args[0])) {

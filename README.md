@@ -15,21 +15,16 @@ new agent API to wire up.
 
 Requires **Node.js 22.12 or newer** and at least one installed agent CLI.
 
-The v2 npm publication is pending. For now, download `clideck-2.0.0.tgz` from
-[the GitHub release](https://github.com/rustykuntz/clideck/releases/tag/v2.0.0)
-and run `npm install -g ./clideck-2.0.0.tgz`, then `clideck`.
-The registry commands below will work after npm publication:
-
 ```sh
 npm install -g clideck@2
 clideck
 ```
 
-Open **http://127.0.0.1:4100**. Create a project, open a few sessions, and give them
+Open **http://127.0.0.1:4000**. Create a project, open a few sessions, and give them
 names that describe their work. The short tour shows you around.
 
 You can also run `npx clideck@2`. Coming from v1? Read [the upgrade notes](UPGRADING.md)
-first: v2 uses a separate workspace and does not import v1 settings or sessions.
+first. V2.0.1 imports your legacy sessions, projects, and saved prompts automatically.
 
 ## Agents working together
 
@@ -98,7 +93,7 @@ clideck --help
 clideck --version
 ```
 
-`CLIDECK_PORT` also sets the port. CliDeck v2 binds to loopback only. Its default
+`CLIDECK_PORT` or `PORT` also sets the port. CliDeck v2 binds to loopback only. Its default
 data directory is `~/.clideck-next`, kept separate from v1's `~/.clideck`.
 Agent CLIs use their own accounts and network connections.
 

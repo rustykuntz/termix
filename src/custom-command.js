@@ -42,6 +42,17 @@ function captureToken(pattern, output) {
 }
 
 function createCustomCommandProvider(commandConfig) {
+  const native = commandConfig.providerId && require('./providers').getProvider(commandConfig.providerId);
+  if (native) {
+    return {
+      ...native,
+      createLaunch(options) {
+        const [command, ...args] = parseCommand(commandConfig.command);
+        const launch = native.createLaunch({ ...options, command, extraArgs: [...args, ...(options.extraArgs || [])] });
+        return { ...launch, args: [...args, ...(launch.args || [])], env: { ...commandConfig.env, ...launch.env } };
+      },
+    };
+  }
   const sessionIdPattern = commandConfig.sessionIdPattern
     ? new RegExp(commandConfig.sessionIdPattern, 'i')
     : null;

@@ -93,7 +93,7 @@ function sendPromptResult(res, result) {
 class HeadlessServer {
   constructor(options = {}) {
     this.host = options.host || '127.0.0.1';
-    this.port = Number(options.port ?? 4100);
+    this.port = Number(options.port ?? 4000);
     this.cwd = options.cwd || process.cwd();
     this.commands = {
       'claude-code': options.command || 'claude',
@@ -1763,13 +1763,13 @@ function parseArgs(argv, env = process.env) {
   const options = {};
   const flags = { '--port': 'port', '--host': 'host', '--cwd': 'cwd', '--command': 'command', '--data-dir': 'dataDir' };
   for (let index = 0; index < argv.length; index += 1) {
-    const flag = argv[index];
+    const [flag, ...inline] = argv[index].split('=');
     if (!flags[flag]) throw new Error(`Unknown option: ${flag}`);
-    const value = argv[++index];
+    const value = inline.length ? inline.join('=') : argv[++index];
     if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value.`);
     options[flags[flag]] = value;
   }
-  const port = options.port ?? env.CLIDECK_PORT;
+  const port = options.port ?? (env.CLIDECK_PORT || env.PORT);
   if (port !== undefined) {
     if (!/^\d+$/.test(port) || Number(port) > 65535) {
       throw new Error('Port must be an integer from 0 to 65535.');
@@ -1801,7 +1801,7 @@ function installShutdownHandlers(server, runtime = process) {
 async function main(argv = process.argv.slice(2), env = process.env) {
   const options = parseArgs(argv, env);
   const host = options.host || '127.0.0.1';
-  const port = Number(options.port ?? 4100);
+  const port = Number(options.port ?? 4000);
   if (!isLoopbackHost(host)) {
     throw new Error(`CliDeck v2 is localhost-only; refusing non-loopback host "${host}".`);
   }
@@ -1814,12 +1814,17 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     return { alreadyRunning: true, lock: acquired.lock };
   }
 
-  const server = new HeadlessServer({ ...options, serverLock: lock, freshInstall });
+  let server;
   let address;
   try {
+    if (!options.dataDir || require('path').resolve(options.dataDir) === DEFAULT_DATA_DIR) {
+      const migrated = require('./legacy-migration').migrateLegacy({ dataDir: options.dataDir || DEFAULT_DATA_DIR });
+      if (migrated) console.log(`Imported ${migrated.sessions} legacy CliDeck sessions. Resume them from the sidebar.`);
+    }
+    server = new HeadlessServer({ ...options, serverLock: lock, freshInstall });
     address = await server.listen();
   } catch (error) {
-    server.persistence.close();
+    server?.persistence.close();
     lock.release();
     throw error;
   }

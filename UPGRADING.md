@@ -1,50 +1,38 @@
 # Upgrading to CliDeck 2
 
-CliDeck 2 replaces the legacy engine and interface. It keeps the npm package name
-`clideck`, but uses **http://127.0.0.1:4100** and **`~/.clideck-next`** by default.
-The separate directory avoids overwriting v1's incompatible session and settings
-files in `~/.clideck`.
+Use **CliDeck 2.0.1 or newer** when upgrading from v1. Install with
+`npm install -g clideck`, stop the old CliDeck process, then run `clideck` again.
+Updating npm does not replace a process that is already running.
 
-## Before updating
+Requires Node.js 22.12 or newer. The default address is **http://127.0.0.1:4000**.
+`--port` takes precedence over `CLIDECK_PORT`, then `PORT`, then the default.
 
-1. Finish or pause your agent work and stop the old CliDeck process yourself.
-2. Keep a copy of `~/.clideck` and the agents' own conversation data.
-3. Install Node.js 22.12 or newer, then run `npm install -g clideck@2`.
-4. Run `clideck` and open the URL it prints.
+## Your sessions come with you
 
-Updating the npm package does not replace an already running process.
+On startup, CliDeck imports saved v1 sessions, projects, prompts, command settings,
+and conversation transcripts from `~/.clideck` into `~/.clideck-next`. Sessions
+appear stopped in the sidebar; resume the ones you need. Native conversation
+histories stay with the original agent CLIs.
 
-## Your workspace
+This also works if you already opened 2.0.0 and saw an empty workspace. Existing
+v2 sessions and settings are preserved, and legacy entries are added once.
+V1 files remain untouched. A copy of existing v2 settings and registry files is
+kept in `~/.clideck-next/before-v1-migration` before the import.
 
-V1 projects, saved prompts, command settings, plugins, and session entries are
-**not imported automatically**. Create your projects and sessions in v2 and copy
-the prompts or custom command settings you want to keep. Do not copy v1's
-`sessions.json` or `config.json` into the v2 directory, or point `--data-dir` at
-v1's directory: their formats differ.
-
-Your agents' native conversation histories remain with their own CLIs. Use the
-agent's own resume flow in a new v2 terminal to continue an older conversation.
-CliDeck does not move or delete that native history.
-
-If you already used the v2 development build, keep its `~/.clideck-next` directory;
-the release continues using it. Explicit plugin settings are preserved.
-
-V2 session backup and recovery are described in [SESSION-BACKUP.md](SESSION-BACKUP.md).
+The import runs only for the default v2 data directory. An explicit separate
+`--data-dir` stays isolated. Do not point v2 directly at `~/.clideck`: the formats
+differ. If old data cannot be read, startup reports the problem without silently
+replacing it with an empty workspace.
 
 ## Removed features
 
-- **Autopilot:** sub-agents already cover this inside today's agent harnesses.
-  CliDeck uses the CLI to let agents work with you and across providers instead.
-- **Mobile control:** harnesses such as Codex and Claude Code provide remote
-  access themselves. CliDeck no longer maintains a separate mobile control layer.
-- **LAN binding:** v2 is localhost-only; `--host 0.0.0.0` is rejected.
-- **Legacy plugins:** v2 has a new plugin SDK. It includes Emoji, Supertonic Voice,
-  and Smart Dictation. OmniVoice is not available in this release.
+- **Autopilot:** today's agents already have sub-agents. CliDeck focuses on agents
+  working with you and across providers through the CLI.
+- **Mobile control:** harnesses provide remote access themselves.
+- **LAN binding:** v2 is localhost-only.
+- **Legacy plugins:** v2 uses its new plugin SDK; old plugin settings are not imported.
 
-Agent discovery and Ask remain available; use `clideck --help` for the v2 syntax.
+For backups and recovery, see [SESSION-BACKUP.md](SESSION-BACKUP.md).
 
-## Going back to v1
-
-Stop v2 yourself, then install `npm install -g clideck@1.33.1` and run `clideck`.
-V1 continues using its original `~/.clideck` data and default port 4000.
-V2 changes are stored separately and are not copied back into v1.
+To return to v1, stop v2, run `npm install -g clideck@1.33.1`, and start CliDeck.
+V1 continues using its original data. New v2 work is not copied back to v1.
